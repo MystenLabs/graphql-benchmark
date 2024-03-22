@@ -1,0 +1,11 @@
+{
+    "eventType": ["0x2d6733a32e957430324196dc5d786d7c839f3c7bbfd92b83c469448b988413b1::coin_flip::Outcome", "0x2::display::DisplayCreated", "0x3::validator::StakingRequestEvent"],
+    "sender": [
+        "0x18889a72b0cd8072196ee4cf269a16d8e559c69088f7488ecb76de002f088010",
+        "0x8eab656650ded2b5e1a2577ad102202595a361b375ba953769c192f30d59fc4c"
+    ],
+    "emittingModule": [
+        "0x7f6ce7ade63857c4fd16ef7783fed2dfc4d7fb7e40615abdb653030b76aef0c6::staked_sui_vault",
+        "0x549e8b69270defbfafd4f94e17ec44cdbdd99820b33bda2278dea3b9a32d3f55::native_pool"
+    ]
+}
