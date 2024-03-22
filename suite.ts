@@ -1,64 +1,148 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import fs from 'fs';
-import path from 'path';
-import { SuiGraphQLClient, GraphQLDocument } from '@mysten/sui.js/graphql';
-import { print, ASTNode } from 'graphql';
-import { benchmark_connection_query, PageInfo } from './benchmark';
+import fs from "fs";
+import path from "path";
+
+import {
+  SuiGraphQLClient,
+  GraphQLDocument,
+  GraphQLQueryOptions,
+} from "@mysten/sui.js/graphql";
+import { ASTNode, print } from "graphql";
+import { benchmark_connection_query, PageInfo } from "./benchmark";
+import { Arguments } from "./cli";
+import { generateFilterCombinations } from "./parameterization";
+import { getSuiteConfiguration } from "./config";
+
+export async function runSelectedSuite(args: Arguments) {
+  const suiteConfig = await getSuiteConfiguration(args.suite);
+
+  const client = new SuiGraphQLClient({
+    url: args.url,
+    queries: suiteConfig.queries,
+  });
+
+  const paramsFilePath = args.paramsFilePath || suiteConfig.paramsFilePath;
+
+  runQuerySuite(
+    suiteConfig.description,
+    paramsFilePath,
+    client,
+    suiteConfig.queries,
+    suiteConfig.queryKey,
+    suiteConfig.dataPath,
+    suiteConfig.typeStringFields,
+    args.index,
+  );
+}
+
+
+
+export type Queries = Record<string, GraphQLDocument>;
+export type Query = Extract<keyof Queries, string>;
+export type Variables =
+  Queries[Query] extends GraphQLDocument<unknown, infer V>
+    ? V
+    : Record<string, unknown>;
 
 /**
- * Query functions that plan to be benchmarked should have the following signature:
- * @param client - The SuiGraphQLClient instance
- * @param variables - The variables to be passed to the query
- * @returns - An object containing the pageInfo and the variables
+ * This function runs a combination of filters emitted by `generateFilters` against a single graphQL
+ * query and benchmarks their performance. Queries that can be paginated are paginated `numPages`
+ * times, while other queries are run `numPage` times. This is repeated for both going forwards and
+ * backwards.
  */
-type QueryFunction<Queries extends Record<string, GraphQLDocument>, Variables> = (
-  client: SuiGraphQLClient<Queries>,
-  variables: Variables,
-) => Promise<{ pageInfo: PageInfo | undefined; variables: Variables }>;
-
-/// For a suite of tests, be able to generate a set of filters
-type FilterParameters = any; // Generalize the filter parameters type
-type GenerateFiltersFunction = (data: FilterParameters) => Generator<any>;
-
-export async function runQuerySuite<Queries extends Record<string, GraphQLDocument>, Variables, Data extends FilterParameters>(
-  client: SuiGraphQLClient<Queries>,
-  queries: Record<string, ASTNode>,
-  queryKey: string, // e.g., 'queryTransactionBlocks' or 'queryEvents'
-  queryFunction: QueryFunction<Queries, Variables>,
-  generateFilters: GenerateFiltersFunction,
-  suiteDescription: string,
+export async function runQuerySuite(
+  description: string,
   jsonFilePath: string,
+  client: SuiGraphQLClient<Queries>,
+  queries: Record<string, GraphQLDocument>,
+  queryKey: Query, // e.g., 'queryTransactionBlocks' or 'queryEvents'
+  dataPath: string, // e.g., 'objects.pageInfo'
+  typeStringFields: string[],
+  index: number,
 ) {
   const inputJsonPathName = path.parse(jsonFilePath).name;
 
   // Read and parse the JSON file
-  const jsonData = fs.readFileSync(path.resolve(__dirname, jsonFilePath), 'utf-8');
-  const data: Data = JSON.parse(jsonData);
+  const jsonData = fs.readFileSync(
+    path.resolve(__dirname, jsonFilePath),
+    "utf-8",
+  );
+
+  // TODO (wlmyng): change the format to expect json["filter"] so we can also do combinations with other variables
+  const filterParams = JSON.parse(jsonData);
 
   let limit = 50;
   let numPages = 10;
-  const description = suiteDescription;
-  const query = print(queries[queryKey]).replace(/\n/g, ' ');
+  const query = print(queries[queryKey] as ASTNode).replace(/\n/g, " ");
   const fileName = `${queryKey}-${inputJsonPathName}-${new Date().toISOString()}.json`;
-  const stream = fs.createWriteStream(path.join(__dirname, fileName), { flags: 'a' });
+  console.log("Streaming to file: ", fileName);
+  const stream = fs.createWriteStream(path.join(__dirname, "experiments", fileName), {
+    flags: "a",
+  });
 
-  stream.write(`{"description": "${description}", "query": "${query}", "reports": [`);
+  stream.write(
+    `{"description": "${description}",\n"query": "${query}",\n"params": ${JSON.stringify(filterParams)},\n"reports": [`,
+  );
+
+  let combinations = generateFilterCombinations(filterParams, typeStringFields);
+
+  console.log("Total filter combinations to run: ", combinations.length);
+
+  let i = 0;
   for (let paginateForwards of [true, false]) {
-    for (let filter of generateFilters(data)) {
+    for (let filter of combinations) {
+      i++;
+      if (i <= index) {
+        continue;
+      }
       let report = await benchmark_connection_query(
         { paginateForwards, limit, numPages },
         async (paginationParams) => {
-          let new_variables: Variables = {
+          let newVariables: Variables = {
             ...paginationParams,
             filter,
           } as Variables;
-          return await queryFunction(client, new_variables);
+
+          return await queryGeneric(client, queryKey, newVariables, dataPath);
         },
       );
-      stream.write(`${JSON.stringify(report, null, 2)},`);
+      console.log("Completed run ", i);
+      let indexed_report = { index: i, ...report };
+      stream.write(`${JSON.stringify(indexed_report, null, 2)},`);
     }
   }
-  stream.end(']}');
+  stream.end("]}");
+}
+
+/**
+ * Given a `client` and `queryName` to query, uses `dataPath` to extract the `PageInfo` object from
+ * the response, and returns it along with the `variables` used in the query.
+ */
+export async function queryGeneric<
+  Query extends Extract<keyof Queries, string>,
+  Queries extends Record<string, GraphQLDocument>,
+>(
+  client: SuiGraphQLClient<Queries>,
+  queryName: Query,
+  variables: Queries[Query] extends GraphQLDocument<unknown, infer V>
+    ? V
+    : Record<string, unknown>,
+  dataPath: string, // e.g., 'objects.pageInfo'
+): Promise<{ pageInfo: PageInfo | undefined; variables: typeof variables }> {
+  const options: Omit<GraphQLQueryOptions<any, any>, "query"> = { variables };
+
+  let response = await client.execute(queryName, options);
+  let data = response.data;
+
+  // Dynamically access the data using the dataPath with safety
+  let result = dataPath
+    .split(".")
+    .reduce((acc: any, curr: string) => acc?.[curr], data);
+
+  return {
+    pageInfo: result ?? undefined, // Fallback to undefined if result is nullish
+    variables,
+  };
 }

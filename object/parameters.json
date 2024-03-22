@@ -1,0 +1,38 @@
+{
+  "type": [
+    "0x2::coin::CoinMetadata<0x2::sui::SUI>",
+    "0x2::coin::Coin",
+    "0x4edaf43ada89b42ba4dee9fbf74a4dee3eb01f3cfd311d4fb2c6946f87952e51::dlab::Dlab",
+    "0xdee9::clob_v2::Pool"
+  ],
+  "objectIds": [
+    ["0x000000353ef2df74044fdda43e57f843d35c1e5ca4d6672e4d31fdc0b69b1b3f"],
+    ["0xfffff9e7d033f150750426289882376dcb7bc12ff0beb4548b821df7985b424f"],
+    [
+      "0x000000353ef2df74044fdda43e57f843d35c1e5ca4d6672e4d31fdc0b69b1b3f",
+      "0xfffff9e7d033f150750426289882376dcb7bc12ff0beb4548b821df7985b424f"
+    ]
+  ],
+  "owner": [
+    "0x0",
+    "0xefa434f1441f5d61bfb5f3d9a26e494e8fcaef87a69cd9ce639d6b648cc8a512"
+  ],
+  "objectKeys": [
+    [
+      {
+        "objectId": "0x0000000000000000000000000000000000000000000000000000000000000006",
+        "version": 29488800
+      }
+    ],
+    [
+      {
+        "objectId": "0xfffffdd8b68fd4197ff68ed50870aad39a4b6ea0b7755a4471371e56132a7ee2",
+        "version": 21707033
+      },
+      {
+        "objectId": "0xfffff86fff638a0e85bd2c0d8f86006a56e19697954deab034b8dbf7958d23f6",
+        "version": 42701317
+      }
+    ]
+  ]
+}
