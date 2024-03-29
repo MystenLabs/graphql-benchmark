@@ -1,9 +1,9 @@
 import json
 import argparse
-from dataclasses import dataclass
 from typing import List, Literal, Dict, Any, Optional
 import requests
 from pydantic import BaseModel
+import datetime
 
 
 class Metrics(BaseModel):
@@ -13,6 +13,7 @@ class Metrics(BaseModel):
     p95: float
     mean: float
     max: float
+    durations: Optional[List[float]]
 
 
 class Report(BaseModel):
@@ -42,7 +43,10 @@ def merge(args):
             report_summaries = ReportSummaries(**data)
             initial.reports.extend(report_summaries.reports)
 
-    with open('merged.json', 'w') as f:
+    filename = 'merged_' + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + '.json'
+    output_dict = initial.dict()
+    output_dict['description'] = 'Merged ' + ', '.join(args.files)
+    with open(filename, 'w') as f:
         json.dump(initial.dict(), f, indent=2)
 
 
@@ -116,7 +120,7 @@ def main():
     parser_repro.set_defaults(func=repro)
 
     parser_merge = subparsers.add_parser('merge')
-    parser_merge.add_argument("files", nargs='+', help="json files to merge")
+    parser_merge.add_argument("--files", nargs='+', help="json files to merge")
     parser_merge.set_defaults(func=merge)
 
 

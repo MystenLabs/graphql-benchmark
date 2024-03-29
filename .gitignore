@@ -1,3 +1,5 @@
 node_modules
-*-*Z.json
+*.json
 experiments
+analysis
+write_to_db.py

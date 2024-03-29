@@ -91,7 +91,11 @@ export async function benchmark_connection_query(
     // TODO: this is a bit awkward because we can't tell if we timed out ...
     // Simple way is just to consider all that exceed the timeout as a timeout
     if (result == undefined) {
-      break;
+      // allow warm up for the first 3 iterations
+      if (i == 2) {
+        break;
+      }
+      continue;
     }
 
     let cursor = pagination.getCursor();
@@ -158,7 +162,7 @@ export function report<T>(
     cursors,
   };
 
-  if (metrics.min > 5000) {
+  if (!(metrics.durations.length > 3)) {
     reportObject.status = "TIMED OUT";
   } else {
     reportObject.metrics = metrics;

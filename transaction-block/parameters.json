@@ -9,17 +9,14 @@
   ],
   "afterCheckpoint": [
     1,
-    10000000,
     20000000
   ],
   "atCheckpoint": [
     1,
-    10000000,
     20000000
   ],
   "beforeCheckpoint": [
     1,
-    10000000,
     20000000
   ],
   "signAddress": [
@@ -48,10 +45,7 @@
       "J13htmX1kBPsnNRpttqVhGNPZMP373BeGCVEShVYmqzH",
       "hv7QPn82VrCSRpLdbNedD7iVRyw9hdTB8U2KEAP7xxz",
       "37MGKaSFohdf7JbAD1j3ZFFiafjAt2hH6KRSxeMuGNyc",
-      "BWRiqXA8medDGyq5DJ1Fea2EbRuJ6AjBxmoqmM1QTLom"
-    ],
-    [
-      "7CuBm1AnLgkBMB6GiEn5d3RizznF5LbawjJTs8A5dcXF",
+      "BWRiqXA8medDGyq5DJ1Fea2EbRuJ6AjBxmoqmM1QTLom",
       "FLUGUDb149YgTD2dmudgQw4VzmTK3juyTgNhfej4N9Ad"
     ]
   ]
