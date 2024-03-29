@@ -1,4 +1,5 @@
 {
+  "filter": {
   "eventType": [
     "0x2d6733a32e957430324196dc5d786d7c839f3c7bbfd92b83c469448b988413b1::coin_flip::Outcome",
     "0x2::display::DisplayCreated",
@@ -12,4 +13,4 @@
     "0x7f6ce7ade63857c4fd16ef7783fed2dfc4d7fb7e40615abdb653030b76aef0c6::staked_sui_vault",
     "0x549e8b69270defbfafd4f94e17ec44cdbdd99820b33bda2278dea3b9a32d3f55::native_pool"
   ]
-}
+}}

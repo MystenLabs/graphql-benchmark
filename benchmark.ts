@@ -116,7 +116,7 @@ type Metrics = {
   p95: number;
   mean: number;
   max: number;
-  durations: number[]
+  durations: number[];
 };
 
 export function metrics(durations: number[]): Metrics {
@@ -135,7 +135,7 @@ export function metrics(durations: number[]): Metrics {
     p95,
     mean: sum / durations.length,
     max: sorted[sorted.length - 1],
-    durations: all_durations
+    durations: all_durations,
   };
 }
 

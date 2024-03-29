@@ -1,4 +1,5 @@
 {
+  "filter": {
   "function": [
     "0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e::pyth",
     "0x000000000000000000000000000000000000000000000000000000000000dee9::clob_v2"
@@ -53,6 +54,6 @@
       "7CuBm1AnLgkBMB6GiEn5d3RizznF5LbawjJTs8A5dcXF",
       "FLUGUDb149YgTD2dmudgQw4VzmTK3juyTgNhfej4N9Ad"
     ]
-  ],
-  "typeFields": ["function"]
+  ]
+}
 }

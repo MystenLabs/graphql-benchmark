@@ -12,7 +12,10 @@ import {
 import { ASTNode, print } from "graphql";
 import { benchmark_connection_query, PageInfo } from "./benchmark";
 import { Arguments } from "./cli";
-import { generateFilterCombinations } from "./parameterization";
+import {
+  EnsureArraysOnly,
+  generateFilterCombinations,
+} from "./parameterization";
 import { getSuiteConfiguration } from "./config";
 
 export async function runSelectedSuite(args: Arguments) {
@@ -37,14 +40,15 @@ export async function runSelectedSuite(args: Arguments) {
   );
 }
 
-
-
 export type Queries = Record<string, GraphQLDocument>;
 export type Query = Extract<keyof Queries, string>;
 export type Variables =
   Queries[Query] extends GraphQLDocument<unknown, infer V>
     ? V
     : Record<string, unknown>;
+export type Parameters<T> = {
+  filter?: EnsureArraysOnly<T>;
+} & { [key: string]: any };
 
 /**
  * This function runs a combination of filters emitted by `generateFilters` against a single graphQL
@@ -70,30 +74,33 @@ export async function runQuerySuite(
     "utf-8",
   );
 
-  // TODO (wlmyng): change the format to expect json["filter"] so we can also do combinations with other variables
-  const filterParams = JSON.parse(jsonData);
+  const parameters = JSON.parse(jsonData) as Parameters<any>;
 
   let limit = 50;
   let numPages = 10;
   const query = print(queries[queryKey] as ASTNode).replace(/\n/g, " ");
   const fileName = `${queryKey}-${inputJsonPathName}-${new Date().toISOString()}.json`;
   console.log("Streaming to file: ", fileName);
-  const stream = fs.createWriteStream(path.join(__dirname, "experiments", fileName), {
-    flags: "a",
-  });
-
-  stream.write(
-    `{"description": "${description}",\n"query": "${query}",\n"params": ${JSON.stringify(filterParams)},\n"reports": [`,
+  const stream = fs.createWriteStream(
+    path.join(__dirname, "experiments", fileName),
+    {
+      flags: "a",
+    },
   );
 
-  let combinations = generateFilterCombinations(filterParams, typeStringFields);
+  stream.write(
+    `{"description": "${description}",\n"query": "${query}",\n"params": ${JSON.stringify(parameters)},\n"reports": [`,
+  );
 
-  console.log("Total filter combinations to run: ", combinations.length);
+  let filterParams = parameters.filter || {};
+  let combinations = generateFilterCombinations(filterParams, typeStringFields);
+  let totalRuns = combinations.length * 2;
+
+  console.log("Total filter combinations to run: ", totalRuns);
 
   let i = 0;
   for (let paginateForwards of [true, false]) {
     for (let filter of combinations) {
-      i++;
       if (i <= index) {
         continue;
       }
@@ -110,7 +117,12 @@ export async function runQuerySuite(
       );
       console.log("Completed run ", i);
       let indexed_report = { index: i, ...report };
-      stream.write(`${JSON.stringify(indexed_report, null, 2)},`);
+      stream.write(`${JSON.stringify(indexed_report, null, 2)}`);
+
+      if (i < totalRuns) {
+        stream.write(",");
+      }
+      i++;
     }
   }
   stream.end("]}");

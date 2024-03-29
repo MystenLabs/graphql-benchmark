@@ -5,17 +5,17 @@
  * Given a string of p[::m[::t[::params]]], emits the parts of the string based on the depth.
  */
 export function expandTypeString(s: string): string[] {
-  const parts = s.split('::');
+  const parts = s.split("::");
 
   if (parts.length < 2) return [s]; // Return the original string if it doesn't match the pattern
 
   const p = parts[0];
   const m = parts[1];
-  const tAndParams = parts.slice(2).join('::');
+  const tAndParams = parts.slice(2).join("::");
 
   const combinations = [p, `${p}::${m}`];
   if (tAndParams) {
-    const t = tAndParams.split('<')[0]; // Assuming params are always enclosed in <>
+    const t = tAndParams.split("<")[0]; // Assuming params are always enclosed in <>
     combinations.push(`${p}::${m}::${t}`);
     combinations.push(`${p}::${m}::${tAndParams}`);
   }
@@ -28,16 +28,19 @@ type ArrayFieldsOptional<T> = {
 };
 
 // A utility type to ensure the input only contains array fields
-type EnsureArraysOnly<T> = {
+export type EnsureArraysOnly<T> = {
   [P in keyof T]: T[P] extends Array<any> ? T[P] : never;
 };
 
 /**
- * Function that generates all possible of combinations of filters given an object whose fields are
- * arrays. It also takes an optional list of fields that signify which fields are type fields, and
- * should be expanded.
+ * Given an object whose fields are arrays of arbitrary type, generate the powerset of the fields.
+ * It also takes an optional list of fields that signify which fields are type fields, and should be
+ * expanded.
  */
-export function generateFilterCombinations<T extends object>(obj: EnsureArraysOnly<T>, typeStringFields: Array<keyof T> = []): ArrayFieldsOptional<T>[] {
+export function generateFilterCombinations<T extends object>(
+  obj: EnsureArraysOnly<T>,
+  typeStringFields: Array<keyof T> = [],
+): ArrayFieldsOptional<T>[] {
   const keys = Object.keys(obj) as Array<keyof T>;
   let combinations: ArrayFieldsOptional<T>[] = [{}];
 
@@ -55,7 +58,10 @@ export function generateFilterCombinations<T extends object>(obj: EnsureArraysOn
     if (values) {
       for (const combination of combinations) {
         for (const value of values) {
-          const newCombination = { ...combination, [key]: value } as ArrayFieldsOptional<T>;
+          const newCombination = {
+            ...combination,
+            [key]: value,
+          } as ArrayFieldsOptional<T>;
           newCombinations.push(newCombination);
         }
       }

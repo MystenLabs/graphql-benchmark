@@ -31,5 +31,4 @@ export const TransactionBlocksQuery = graphql(`
   }
 `);
 
-
 export const queries = { queryTransactionBlocks: TransactionBlocksQuery };
