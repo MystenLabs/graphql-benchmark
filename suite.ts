@@ -80,7 +80,7 @@ export async function runQuerySuite(
   let numPages = 10;
   const query = print(queries[queryKey] as ASTNode).replace(/\n/g, " ");
   const fileName = `${queryKey}-${inputJsonPathName}-${new Date().toISOString()}.json`;
-  console.log("Streaming to file: ", fileName);
+  console.log("Streaming to file: ", path.join(__dirname, "experiments", fileName));
   const stream = fs.createWriteStream(
     path.join(__dirname, "experiments", fileName),
     {
@@ -98,12 +98,14 @@ export async function runQuerySuite(
 
   console.log("Total filter combinations to run: ", totalRuns);
 
-  let i = 0;
+  let i = -1;
   for (let paginateForwards of [true, false]) {
     for (let filter of combinations) {
+      i++;
       if (i <= index) {
         continue;
       }
+
       let report = await benchmark_connection_query(
         { paginateForwards, limit, numPages },
         async (paginationParams) => {
@@ -122,7 +124,6 @@ export async function runQuerySuite(
       if (i < totalRuns) {
         stream.write(",");
       }
-      i++;
     }
   }
   stream.end("]}");

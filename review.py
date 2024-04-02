@@ -13,7 +13,7 @@ class Metrics(BaseModel):
     p95: float
     mean: float
     max: float
-    durations: Optional[List[float]]
+    durations: Optional[List[float]] = None
 
 
 class Report(BaseModel):
@@ -21,7 +21,7 @@ class Report(BaseModel):
     status: Literal['COMPLETED', 'TIMED OUT']
     variables: Dict[str, Any]
     cursors: List[str]
-    metrics: Optional[Metrics]
+    metrics: Optional[Metrics] = None
 
 
 class ReportSummaries(BaseModel):
