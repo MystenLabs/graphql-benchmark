@@ -9,7 +9,7 @@ def digest_to_hex(digest):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Convert a base58 digest to hex')
-    parser.add_argument('digest', type=str, help='The base58 digest to convert')
+    parser.add_argument('--digest', type=str, help='The base58 digest to convert')
     args = parser.parse_args()
 
     print(digest_to_hex(args.digest))
