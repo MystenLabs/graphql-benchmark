@@ -1,3 +1,6 @@
 pandas==2.0.3
 pydantic==2.6.4
 scikit-learn==1.2.2
+tqdm
+psycopg2
+python-dotenv
