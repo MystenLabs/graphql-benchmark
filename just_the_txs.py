@@ -30,29 +30,17 @@ CREATE TABLE tx_senders_cp (
     PRIMARY KEY (address, tx_sequence_number, checkpoint_sequence_number)
 );
 CREATE INDEX tx_seq_num ON tx_senders_cp (tx_sequence_number);
+
+CREATE TABLE tx_recipients_cp (
+    tx_sequence_number bigint NOT NULL,
+    address bytea NOT NULL,
+    checkpoint_sequence_number bigint NOT NULL,
+    PRIMARY KEY (address, tx_sequence_number, checkpoint_sequence_number)
+);
+CREATE INDEX tx_seq_num ON tx_recipients_cp (tx_sequence_number);
+# these are needed to speed up the migration for other tx_ lookup tables
 """
 
-"""
-useful queries
-SELECT
-  COUNT(*) AS current_connections,
-  (SELECT setting::int FROM pg_settings WHERE name = 'max_connections') AS max_connections,
-  (SELECT setting::int FROM pg_settings WHERE name = 'superuser_reserved_connections') AS reserved_for_superusers,
-  (SELECT setting::int FROM pg_settings WHERE name = 'max_connections') - COUNT(*) AS available_connections
-FROM
-  pg_stat_activity;
-
-SELECT
-  relname AS table_name,
-  n_live_tup AS estimated_row_count
-FROM pg_stat_user_tables where relname = 'tx_recipients_cp';
-
-
-SELECT pg_terminate_backend(pid)
-FROM pg_stat_activity
-WHERE pid <> pg_backend_pid() -- Exclude your own connection
-AND datname = 'defaultdb';
-"""
 import signal
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -189,20 +177,21 @@ def update_table_with_addr(conn, start, end, table, fields, primary_key, rel):
 
     query = f"""
     WITH txs AS (
-        SELECT tx_sequence_number, checkpoint_sequence_number, {rel}
+        SELECT tx_sequence_number, checkpoint_sequence_number, address
         FROM tx_{rel}s_cp
         WHERE tx_sequence_number BETWEEN %s AND %s
     ),
     partial AS (
-        SELECT {', '.join(fields)}, txs.tx_sequence_number, txs.checkpoint_sequence_number, txs.{rel}
+        SELECT {', '.join(fields)}, txs.tx_sequence_number, txs.checkpoint_sequence_number, txs.address
         FROM {table}
         JOIN txs USING (tx_sequence_number)
     )
     INSERT INTO {table}_cp (tx_sequence_number, checkpoint_sequence_number, address, rel, {', '.join(fields)})
-    SELECT tx_sequence_number, checkpoint_sequence_number, {rel}, {rel_num} {', '.join(fields)}
+    SELECT tx_sequence_number, checkpoint_sequence_number, address, {rel_num}, {', '.join(fields)}
     FROM partial
     ON CONFLICT ({primary_key}, address, rel, tx_sequence_number) DO NOTHING;
     """
+    print(query)
     try:
         with conn.cursor() as cur:
             cur.execute(query, (start, end))
@@ -267,6 +256,7 @@ if __name__ == '__main__':
     parser.add_argument("--resume", help="Continue processing per a log file", action="store_true")
     parser.add_argument("--log", help="Log file to continue processing", type=str)
     parser.add_argument("--add-addresses", help="Add address (sender or recipient) to the table", action="store_true")
+    parser.add_argument("--rel", help="Relation to update", type=str, default='sender')
     parser.add_argument("--add-cp", help="Add checkpoint_sequence_number to the table", action="store_true")
     parser.add_argument("--table", help="Table to update", type=str)
 
@@ -296,7 +286,6 @@ if __name__ == '__main__':
         if args.table == 'tx_calls':
             def update_table_wrapper(conn, start, end):
                 fields = ['package', 'module', 'func']
-                new_table = 'tx_calls_cp'
                 primary_key = 'package, module, func'
-                update_table_with_addr(conn, start, end, 'tx_calls', fields, new_table, primary_key, args.add_cp is not None)
+                update_table_with_addr(conn, start, end, 'tx_calls', fields, primary_key, args.rel)
             start_threads(update_table_wrapper, args.start, end_tx, thread_ranges)
