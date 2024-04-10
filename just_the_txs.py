@@ -13,7 +13,7 @@ CREATE TABLE tx_calls_cp (
     func text NOT NULL,
     address bytea NOT NULL,
     rel smallint NOT NULL,
-    PRIMARY KEY (package, module, func, address, rel, tx_sequence_number)
+    PRIMARY KEY (package, module, func, address, tx_sequence_number)
 );
 CREATE INDEX pkg_tx ON tx_calls_cp (package, tx_sequence_number, checkpoint_sequence_number);
 CREATE INDEX pkg_addr_tx ON tx_calls_cp (package, address, tx_sequence_number, checkpoint_sequence_number);
@@ -29,7 +29,7 @@ CREATE TABLE tx_senders_cp (
     checkpoint_sequence_number bigint NOT NULL,
     PRIMARY KEY (address, tx_sequence_number, checkpoint_sequence_number)
 );
-CREATE INDEX tx_seq_num ON tx_senders_cp (tx_sequence_number);
+CREATE INDEX tx_seq_num_senders ON tx_senders_cp (tx_sequence_number);
 
 CREATE TABLE tx_recipients_cp (
     tx_sequence_number bigint NOT NULL,
@@ -37,8 +37,18 @@ CREATE TABLE tx_recipients_cp (
     checkpoint_sequence_number bigint NOT NULL,
     PRIMARY KEY (address, tx_sequence_number, checkpoint_sequence_number)
 );
-CREATE INDEX tx_seq_num ON tx_recipients_cp (tx_sequence_number);
+CREATE INDEX tx_seq_num_recipients ON tx_recipients_cp (tx_sequence_number);
 # these are needed to speed up the migration for other tx_ lookup tables
+
+
+CREATE TABLE tx_addresses (
+    tx_sequence_number bigint NOT NULL,
+    address bytea NOT NULL,
+    checkpoint_sequence_number bigint NOT NULL,
+    rel smallint NOT NULL,
+    PRIMARY KEY (address, rel, tx_sequence_number, checkpoint_sequence_number)
+);
+
 """
 
 import signal
@@ -169,29 +179,58 @@ def update_address_with_cp(conn, start, end, rel):
         conn.rollback()
         print(f"Error updating tx_{rel}s_cp table: {e}")
 
-def update_table_with_addr(conn, start, end, table, fields, primary_key, rel):
+def create_merged_address_table(conn, start, end):
+    query = """
+    WITH s AS (
+        SELECT * FROM tx_senders_cp WHERE tx_sequence_number BETWEEN %s AND %s
+    ),
+    r AS (
+        SELECT * FROM tx_recipients_cp WHERE tx_sequence_number BETWEEN %s AND %s
+    )
+    INSERT INTO tx_addresses (tx_sequence_number, address, checkpoint_sequence_number, rel)
+    SELECT
+        COALESCE(s.tx_sequence_number, r.tx_sequence_number) AS tx_sequence_number,
+        COALESCE(s.address, r.address) AS address,
+        COALESCE(s.checkpoint_sequence_number, r.checkpoint_sequence_number) AS checkpoint_sequence_number,
+        CASE
+            WHEN s.address IS NOT NULL AND r.address IS NULL THEN 0 -- Sender
+            WHEN s.address IS NULL AND r.address IS NOT NULL THEN 1 -- Recipient
+            ELSE 2 -- SenderAndRecipient
+        END AS rel
+    FROM s
+    FULL OUTER JOIN r ON s.tx_sequence_number = r.tx_sequence_number AND s.checkpoint_sequence_number = r.checkpoint_sequence_number AND s.address = r.address
+    ON CONFLICT (tx_sequence_number, rel, address, checkpoint_sequence_number) DO NOTHING;
     """
-    Update the table with additional data from either `tx_senders` or `tx_recipients`.
+    try:
+        with conn.cursor() as cur:
+            cur.execute(query, (start, end, start, end))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print(f"Error updating tx_addresses table: {e} given start: {start} and end: {end}")
+
+
+def update_table_with_addr(conn, start, end, table, fields, primary_key):
     """
-    rel_num = 0 if rel == 'sender' else 1
+    Update the table with `address` and `rel` from `tx_addresses`.
+    """
 
     query = f"""
     WITH txs AS (
-        SELECT tx_sequence_number, checkpoint_sequence_number, address
-        FROM tx_{rel}s_cp
+        SELECT tx_sequence_number, checkpoint_sequence_number, address, rel
+        FROM tx_addresses
         WHERE tx_sequence_number BETWEEN %s AND %s
     ),
     partial AS (
-        SELECT {', '.join(fields)}, txs.tx_sequence_number, txs.checkpoint_sequence_number, txs.address
+        SELECT {', '.join(fields)}, txs.tx_sequence_number, txs.checkpoint_sequence_number, txs.address, txs.rel
         FROM {table}
         JOIN txs USING (tx_sequence_number)
     )
     INSERT INTO {table}_cp (tx_sequence_number, checkpoint_sequence_number, address, rel, {', '.join(fields)})
-    SELECT tx_sequence_number, checkpoint_sequence_number, address, {rel_num}, {', '.join(fields)}
+    SELECT tx_sequence_number, checkpoint_sequence_number, address, rel, {', '.join(fields)}
     FROM partial
-    ON CONFLICT ({primary_key}, address, rel, tx_sequence_number) DO NOTHING;
+    ON CONFLICT ({primary_key}, address, tx_sequence_number) DO NOTHING;
     """
-    print(query)
     try:
         with conn.cursor() as cur:
             cur.execute(query, (start, end))
@@ -259,6 +298,7 @@ if __name__ == '__main__':
     parser.add_argument("--rel", help="Relation to update", type=str, default='sender')
     parser.add_argument("--add-cp", help="Add checkpoint_sequence_number to the table", action="store_true")
     parser.add_argument("--table", help="Table to update", type=str)
+    parser.add_argument("--merge-addresses", help="Merge sender and recipient addresses", action="store_true")
 
     args = parser.parse_args()
 
@@ -282,6 +322,8 @@ if __name__ == '__main__':
             def update_table_wrapper(conn, start, end):
                 update_address_with_cp(conn, start, end, 'recipient')
             start_threads(update_table_wrapper, args.start, end_tx, thread_ranges)
+    elif args.merge_addresses:
+        start_threads(create_merged_address_table, args.start, end_tx, thread_ranges)
     elif args.add_addresses:
         if args.table == 'tx_calls':
             def update_table_wrapper(conn, start, end):
