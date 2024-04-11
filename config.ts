@@ -41,15 +41,17 @@ export async function getSuiteConfiguration(suiteName: string) {
         paramsFilePath: "./event/parameters.json",
       };
     }
-    case "coin": {
+    case "coinsByType":
+    case "coinsByOwner": {
       let { queries } = await import("./coin/queries");
+      let dataPath = suiteName === "coinsByType" ? "coins.pageInfo" : "owner.coins.pageInfo";
 
       return {
         description: "Coins suite description",
         queries,
-        queryKey: "queryCoins",
-        dataPath: "coins.pageInfo",
-        typeStringFields: ["type"],
+        queryKey: suiteName,
+        dataPath,
+        typeStringFields: [],
         paramsFilePath: "./coin/parameters.json",
       };
     }

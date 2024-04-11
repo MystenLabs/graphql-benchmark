@@ -91,6 +91,7 @@ export async function benchmark_connection_query(
     // TODO: this is a bit awkward because we can't tell if we timed out ...
     // Simple way is just to consider all that exceed the timeout as a timeout
     if (result == undefined) {
+      console.log("no result returned");
       // allow warm up for the first 3 iterations
       if (i == 2) {
         break;

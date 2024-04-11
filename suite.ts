@@ -99,7 +99,7 @@ export async function runQuerySuite(
 
   let i = -1;
   for (let paginateForwards of [true, false]) {
-    for (let filter of combinations) {
+    for (let parameters of combinations) {
       i++;
       if (i <= index) {
         continue;
@@ -109,8 +109,8 @@ export async function runQuerySuite(
         { paginateForwards, limit, numPages },
         async (paginationParams) => {
           let newVariables: Variables = {
+            ...parameters,
             ...paginationParams,
-            filter,
           } as Variables;
 
           return await queryGeneric(client, queryKey, newVariables, dataPath);
