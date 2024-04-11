@@ -27,7 +27,9 @@ Recommend setting `\pset pager off` in your psql session to show results of `exp
 4. Set the defaults in [config.ts](config.ts)
 
 # Graphql setup
+
 - Modify `pg.rs` with the following to print db queries
+
 ```rust
     fn result<Q, U>(&mut self, query: impl Fn() -> Q) -> QueryResult<U>
     where
@@ -42,18 +44,20 @@ Recommend setting `\pset pager off` in your psql session to show results of `exp
         query().get_result(self.conn)
     }
 ```
+
 - Note that the checkpoint watermark task is very noisy, I like to set it to return a static result instead of constantly fetching from db.
 
 # Python scripts
+
 - `analysis.py` does the initial clustering to facilitate reviewing results
 - `runnable_query.py` - converts the `debug_query` display printed by graphql for each query into something you can copy and paste into psql
 - `utils.py` convert base58 to hex - useful for converting `transaction_digest` to something that can be run against `transactions` table
 - `review.py` to merge multiple runs, select combinations that timed out, repro arbitrary runs
 
-
 # migrating txs
+
 1. Create unpartitioned table of `(tx, cp)`: `python3 just_the_txs.py --setup`
-  a. Can resume with `python3 just_the_txs.py --setup --resume --log pathToLogFile`
+   a. Can resume with `python3 just_the_txs.py --setup --resume --log pathToLogFile`
 2. Add `cp` info to `tx_senders` and `tx_recipients`: `python3 just_the_txs.py --add-cp --table tx_senders | tx_recipients`
 3. Merge into a single `tx_addresses` table: `python3 just_the_txs.py --merge-addresses`
 4. Apply the merged table to other `tx_` lookup tables: `python3 just_the_txs.py --add-addresses --table tx_calls`

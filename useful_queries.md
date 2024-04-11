@@ -1,4 +1,5 @@
 View count of active connections
+
 ```sql
 SELECT
   COUNT(*) AS current_connections,
@@ -10,6 +11,7 @@ FROM
 ```
 
 Estimated row count
+
 ```sql
 SELECT
   relname AS table_name,
@@ -18,6 +20,7 @@ FROM pg_stat_user_tables where relname = 'tx_recipients_cp';
 ```
 
 kill active connections
+
 ```sql
 SELECT pg_terminate_backend(pid)
 FROM pg_stat_activity
@@ -26,6 +29,7 @@ AND datname = 'defaultdb';
 ```
 
 check index progress
+
 ```sql
 SELECT
   pid,
