@@ -41,6 +41,18 @@ export async function getSuiteConfiguration(suiteName: string) {
         paramsFilePath: "./event/parameters.json",
       };
     }
+    case "coin": {
+      let { queries } = await import("./coin/queries");
+
+      return {
+        description: "Coins suite description",
+        queries,
+        queryKey: "queryCoins",
+        dataPath: "coins.pageInfo",
+        typeStringFields: ["type"],
+        paramsFilePath: "./coin/parameters.json",
+      };
+    }
     default:
       throw new Error(`Unknown suite: ${suiteName}`);
   }

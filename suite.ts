@@ -12,10 +12,7 @@ import {
 import { ASTNode, print } from "graphql";
 import { benchmark_connection_query, PageInfo } from "./benchmark";
 import { Arguments } from "./cli";
-import {
-  EnsureArraysOnly,
-  generateFilterCombinations,
-} from "./parameterization";
+import { EnsureArraysOnly, generateCombinations } from "./parameterization";
 import { getSuiteConfiguration } from "./config";
 
 export async function runSelectedSuite(args: Arguments) {
@@ -80,7 +77,10 @@ export async function runQuerySuite(
   let numPages = 10;
   const query = print(queries[queryKey] as ASTNode).replace(/\n/g, " ");
   const fileName = `${queryKey}-${inputJsonPathName}-${new Date().toISOString()}.json`;
-  console.log("Streaming to file: ", path.join(__dirname, "experiments", fileName));
+  console.log(
+    "Streaming to file: ",
+    path.join(__dirname, "experiments", fileName),
+  );
   const stream = fs.createWriteStream(
     path.join(__dirname, "experiments", fileName),
     {
@@ -92,8 +92,7 @@ export async function runQuerySuite(
     `{"description": "${description}",\n"query": "${query}",\n"params": ${JSON.stringify(parameters)},\n"reports": [`,
   );
 
-  let filterParams = parameters.filter || {};
-  let combinations = generateFilterCombinations(filterParams, typeStringFields);
+  let combinations = generateCombinations(parameters, typeStringFields);
   let totalRuns = combinations.length * 2;
 
   console.log("Total filter combinations to run: ", totalRuns);
