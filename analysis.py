@@ -38,8 +38,9 @@ def extract_filter_keys_and_status(reports: List[Report]) -> pd.DataFrame:
     for report in reports:
         # Convert each report.variables into a dictionary of key: 1 for one-hot encoding
         flattened_variables = {k: v for k, v in report.variables.items() if k != 'filter'}
-        # Flatten the nested 'filter' onto the top level
-        flattened_variables.update(report.variables['filter'])
+        # Flatten the nested 'filter' onto the top level, if it exists
+        if 'filter' in report.variables:
+            flattened_variables.update(report.variables['filter'])
         report_data = {key: 1 for key in flattened_variables.keys()}
         # Add binary status (1 for "TIMED OUT", 0 for "COMPLETED")
         report_data[STATUS] = TIMED_OUT if report.status == "TIMED OUT" else 0

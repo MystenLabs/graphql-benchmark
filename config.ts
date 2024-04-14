@@ -55,6 +55,21 @@ export async function getSuiteConfiguration(suiteName: string) {
         paramsFilePath: "./coin/parameters.json",
       };
     }
+    case "dfsByOwner":
+    case "dfsByObject":
+    {
+      let { queries } = await import("./dynamic-field/queries");
+      let dataPath = suiteName === "dfsByOwner" ? "owner.dynamicFields.pageInfo" : "object.dynamicFields.pageInfo";
+      let paramsFilePath = suiteName === "dfsByOwner" ? "./dynamic-field/parameters-owner.json" : "./dynamic-field/parameters-object.json";
+      return {
+        description: "Dynamic Fields suite description",
+        queries,
+        queryKey: suiteName,
+        dataPath,
+        typeStringFields: [],
+        paramsFilePath,
+      };
+    }
     default:
       throw new Error(`Unknown suite: ${suiteName}`);
   }
