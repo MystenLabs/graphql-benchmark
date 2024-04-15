@@ -1,3 +1,6 @@
+// Copyright (c) Mysten Labs, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 import { generateCombinations } from "../parameterization";
 
 test("generateCombinations generates expected number of power sets", () => {

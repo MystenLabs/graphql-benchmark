@@ -1,5 +1,7 @@
 Ad-hoc Python scripts to transform the db to enable further benchmarking.
 
+`set maintenance_work_mem to '1 GB';` to speed up index creation.
+
 # migrating txs
 
 1. Create unpartitioned table of `(tx, cp)`: `python3 just_the_txs.py --setup`

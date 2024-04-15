@@ -1,3 +1,6 @@
+# Copyright (c) Mysten Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
 from review import ReportSummaries, Report
 from typing import List
 import pandas as pd

@@ -1,3 +1,6 @@
+# Copyright (c) Mysten Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
 import json
 import argparse
 from typing import List, Literal, Dict, Any, Optional

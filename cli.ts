@@ -1,3 +1,6 @@
+// Copyright (c) Mysten Labs, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import { runSelectedSuite } from "./suite";
