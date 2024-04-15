@@ -223,7 +223,7 @@ def create_merged_address_table(conn, start, end):
         print(f"Error updating tx_addresses table: {e} given start: {start} and end: {end}")
 
 
-def update_table_with_addr(conn, start, end, table, fields, primary_key):
+def update_table_with_addr(conn, start, end, table, fields):
     """
     Update the table with `address` and `rel` from `tx_addresses`.
     """
@@ -242,7 +242,7 @@ def update_table_with_addr(conn, start, end, table, fields, primary_key):
     INSERT INTO {table}_cp (tx_sequence_number, checkpoint_sequence_number, address, rel, {', '.join(fields)})
     SELECT tx_sequence_number, checkpoint_sequence_number, address, rel, {', '.join(fields)}
     FROM partial
-    ON CONFLICT ({primary_key}, address, tx_sequence_number) DO NOTHING;
+    ON CONFLICT ({', '.join(fields)}, address, tx_sequence_number) DO NOTHING;
     """
     try:
         with conn.cursor() as cur:
@@ -344,6 +344,5 @@ if __name__ == '__main__':
         if args.table == 'tx_calls':
             def update_table_wrapper(conn, start, end):
                 fields = ['package', 'module', 'func']
-                primary_key = 'package, module, func'
-                update_table_with_addr(conn, start, end, 'tx_calls', fields, primary_key, args.rel)
+                update_table_with_addr(conn, start, end, 'tx_calls', fields)
             start_threads(update_table_wrapper, args.start, end_tx, thread_ranges)
