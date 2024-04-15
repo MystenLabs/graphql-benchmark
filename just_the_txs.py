@@ -179,6 +179,16 @@ def update_address_with_cp(conn, start, end, rel):
         conn.rollback()
         print(f"Error updating tx_{rel}s_cp table: {e}")
 
+def update_address_rel_bitmask(conn, start, end):
+    query = "UPDATE tx_addresses SET rel_bitmask = 3 WHERE tx_sequence_number BETWEEN %s AND %s AND rel = 2;"
+    try:
+        with conn.cursor() as cur:
+            cur.execute(query, (start, end))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print(f"Error updating rel_bitmask on tx_addresses table: {e}")
+
 def create_merged_address_table(conn, start, end):
     query = """
     WITH s AS (
@@ -297,6 +307,7 @@ if __name__ == '__main__':
     parser.add_argument("--add-addresses", help="Add address (sender or recipient) to the table", action="store_true")
     parser.add_argument("--rel", help="Relation to update", type=str, default='sender')
     parser.add_argument("--add-cp", help="Add checkpoint_sequence_number to the table", action="store_true")
+    parser.add_argument("--add-rel-bitmask", help="Add rel_bitmask to the table", action="store_true")
     parser.add_argument("--table", help="Table to update", type=str)
     parser.add_argument("--merge-addresses", help="Merge sender and recipient addresses", action="store_true")
 
@@ -322,6 +333,8 @@ if __name__ == '__main__':
             def update_table_wrapper(conn, start, end):
                 update_address_with_cp(conn, start, end, 'recipient')
             start_threads(update_table_wrapper, args.start, end_tx, thread_ranges)
+    elif args.add_rel_bitmask:
+        start_threads(update_address_rel_bitmask, args.start, end_tx, thread_ranges)
     elif args.merge_addresses:
         start_threads(create_merged_address_table, args.start, end_tx, thread_ranges)
     elif args.add_addresses:
