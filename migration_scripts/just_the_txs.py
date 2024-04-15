@@ -1,3 +1,6 @@
+# Copyright (c) Mysten Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
 """
 CREATE TABLE tx_sequence_numbers (
     tx_sequence_number bigint NOT NULL,
