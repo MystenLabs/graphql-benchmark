@@ -1,59 +1,6 @@
 # Copyright (c) Mysten Labs, Inc.
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-CREATE TABLE tx_sequence_numbers (
-    tx_sequence_number bigint NOT NULL,
-    checkpoint_sequence_number bigint NOT NULL,
-    PRIMARY KEY (tx_sequence_number)
-);
-
-CREATE TABLE tx_calls_cp (
-    tx_sequence_number bigint NOT NULL,
-    checkpoint_sequence_number bigint NOT NULL,
-    package bytea NOT NULL,
-    module text NOT NULL,
-    func text NOT NULL,
-    address bytea NOT NULL,
-    rel smallint NOT NULL,
-    PRIMARY KEY (package, module, func, address, tx_sequence_number)
-);
-CREATE INDEX pkg_tx ON tx_calls_cp (package, tx_sequence_number, checkpoint_sequence_number);
-CREATE INDEX pkg_addr_tx ON tx_calls_cp (package, address, tx_sequence_number, checkpoint_sequence_number);
-CREATE INDEX pkg_addr_rel_tx ON tx_calls_cp (package, address, rel, tx_sequence_number, checkpoint_sequence_number);
-CREATE INDEX pkg_mod_tx ON tx_calls_cp (package, module, tx_sequence_number, checkpoint_sequence_number);
-CREATE INDEX pkg_mod_addr_tx ON tx_calls_cp (package, module, address, tx_sequence_number, checkpoint_sequence_number);
-CREATE INDEX pkg_mod_addr_rel_tx ON tx_calls_cp (package, module, address, rel, tx_sequence_number, checkpoint_sequence_number);
-
-
-CREATE TABLE tx_senders_cp (
-    tx_sequence_number bigint NOT NULL,
-    address bytea NOT NULL,
-    checkpoint_sequence_number bigint NOT NULL,
-    PRIMARY KEY (address, tx_sequence_number, checkpoint_sequence_number)
-);
-CREATE INDEX tx_seq_num_senders ON tx_senders_cp (tx_sequence_number);
-
-CREATE TABLE tx_recipients_cp (
-    tx_sequence_number bigint NOT NULL,
-    address bytea NOT NULL,
-    checkpoint_sequence_number bigint NOT NULL,
-    PRIMARY KEY (address, tx_sequence_number, checkpoint_sequence_number)
-);
-CREATE INDEX tx_seq_num_recipients ON tx_recipients_cp (tx_sequence_number);
-# these are needed to speed up the migration for other tx_ lookup tables
-
-
-CREATE TABLE tx_addresses (
-    tx_sequence_number bigint NOT NULL,
-    address bytea NOT NULL,
-    checkpoint_sequence_number bigint NOT NULL,
-    rel smallint NOT NULL,
-    PRIMARY KEY (address, rel, tx_sequence_number, checkpoint_sequence_number)
-);
-
-"""
-
 import signal
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -182,16 +129,6 @@ def update_address_with_cp(conn, start, end, rel):
         conn.rollback()
         print(f"Error updating tx_{rel}s_cp table: {e}")
 
-def update_address_rel_bitmask(conn, start, end):
-    query = "UPDATE tx_addresses SET rel_bitmask = 3 WHERE tx_sequence_number BETWEEN %s AND %s AND rel = 2;"
-    try:
-        with conn.cursor() as cur:
-            cur.execute(query, (start, end))
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        print(f"Error updating rel_bitmask on tx_addresses table: {e}")
-
 def create_merged_address_table(conn, start, end):
     query = """
     WITH s AS (
@@ -223,10 +160,14 @@ def create_merged_address_table(conn, start, end):
         print(f"Error updating tx_addresses table: {e} given start: {start} and end: {end}")
 
 
-def update_table_with_addr(conn, start, end, table, fields):
+def update_table_with_addr(conn, start, end, table, new_table_name, fields, primary_key = None):
     """
     Update the table with `address` and `rel` from `tx_addresses`.
     """
+
+    handle_primary_key_conflict = "ON CONFLICT DO NOTHING" if primary_key is None else f"""
+    ON CONFLICT ({', '.join(primary_key)}) DO UPDATE
+    SET address = EXCLUDED.address, rel = EXCLUDED.rel"""
 
     query = f"""
     WITH txs AS (
@@ -239,10 +180,10 @@ def update_table_with_addr(conn, start, end, table, fields):
         FROM {table}
         JOIN txs USING (tx_sequence_number)
     )
-    INSERT INTO {table}_cp (tx_sequence_number, checkpoint_sequence_number, address, rel, {', '.join(fields)})
+    INSERT INTO {new_table_name} (tx_sequence_number, checkpoint_sequence_number, address, rel, {', '.join(fields)})
     SELECT tx_sequence_number, checkpoint_sequence_number, address, rel, {', '.join(fields)}
     FROM partial
-    ON CONFLICT ({', '.join(fields)}, address, tx_sequence_number) DO NOTHING;
+    {handle_primary_key_conflict};
     """
     try:
         with conn.cursor() as cur:
@@ -250,7 +191,7 @@ def update_table_with_addr(conn, start, end, table, fields):
         conn.commit()
     except Exception as e:
         conn.rollback()
-        print(f"Error updating {table}_cp: {e}")
+        print(f"Error updating {new_table_name}: {e}")
 
 def start_threads(func, start, end, thread_ranges=[]):
     total_range = end - start + 1
@@ -310,7 +251,6 @@ if __name__ == '__main__':
     parser.add_argument("--add-addresses", help="Add address (sender or recipient) to the table", action="store_true")
     parser.add_argument("--rel", help="Relation to update", type=str, default='sender')
     parser.add_argument("--add-cp", help="Add checkpoint_sequence_number to the table", action="store_true")
-    parser.add_argument("--add-rel-bitmask", help="Add rel_bitmask to the table", action="store_true")
     parser.add_argument("--table", help="Table to update", type=str)
     parser.add_argument("--merge-addresses", help="Merge sender and recipient addresses", action="store_true")
 
@@ -336,13 +276,31 @@ if __name__ == '__main__':
             def update_table_wrapper(conn, start, end):
                 update_address_with_cp(conn, start, end, 'recipient')
             start_threads(update_table_wrapper, args.start, end_tx, thread_ranges)
-    elif args.add_rel_bitmask:
-        start_threads(update_address_rel_bitmask, args.start, end_tx, thread_ranges)
     elif args.merge_addresses:
         start_threads(create_merged_address_table, args.start, end_tx, thread_ranges)
     elif args.add_addresses:
         if args.table == 'tx_calls':
             def update_table_wrapper(conn, start, end):
                 fields = ['package', 'module', 'func']
-                update_table_with_addr(conn, start, end, 'tx_calls', fields)
-            start_threads(update_table_wrapper, args.start, end_tx, thread_ranges)
+                primary_key = ['package', 'module', 'func', 'address', 'tx_sequence_number']
+                new_table_name = 'tx_calls_cp'
+                update_table_with_addr(conn, start, end, 'tx_calls', new_table_name, fields, primary_key)
+        elif args.table == 'tx_changed_objects':
+            def update_table_wrapper(conn, start, end):
+                fields = ['object_id']
+                # primary_key = ['object_id', 'address', 'tx_sequence_number']
+                new_table_name = 'tx_changed_objects_cp'
+                update_table_with_addr(conn, start, end, 'tx_changed_objects', new_table_name, fields, None)
+        elif args.table == 'tx_input_objects':
+            def update_table_wrapper(conn, start, end):
+                fields = ['object_id']
+                # primary_key = ['object_id', 'address', 'tx_sequence_number']
+                new_table_name = 'tx_input_objects_cp'
+                update_table_with_addr(conn, start, end, 'tx_input_objects', new_table_name, fields, None)
+        elif args.table == 'tx_digests':
+            def update_table_wrapper(conn, start, end):
+                fields = ['tx_digest']
+                primary_key = ['tx_digest', 'address']
+                new_table_name = 'tx_digests'
+                update_table_with_addr(conn, start, end, 'tx_digests', new_table_name, fields, None)
+        start_threads(update_table_wrapper, args.start, end_tx, thread_ranges)

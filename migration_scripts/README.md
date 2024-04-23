@@ -10,8 +10,7 @@ Ad-hoc Python scripts to transform the db to enable further benchmarking.
 3. Merge into a single `tx_addresses` table: `python3 just_the_txs.py --merge-addresses`
 4. Apply the merged table to other `tx_` lookup tables: `python3 just_the_txs.py --add-addresses --table tx_calls`
 
-trying out on subset: `tx_senders`, `tx_recipients`, `tx_calls`
-
+To apply step 4 efficiently, the table needs to have an index on `tx_sequence_number`, which can be added quickly by setting `set maintenance_work_mem to '1 GB';` before creating the index
 
 # objects history
 `objects_history.py` leverages the fact that if you want to create an index on a partitioned table, you can "init" the index on the base table, then fire off a bunch of create index concurrently on each table partition https://www.postgresql.org/docs/current/ddl-partitioning.html#DDL-PARTITIONING-DECLARATIVE (see bit starting from CREATE INDEX measurement_usls_idx ON ONLY measurement (unitsales)), finally attaching them back to the base index once completed. The objects_history table has 328 partitions. By doing this, setting max_connections on the connection pool to 400, and max threads to somewhere in the ballpark, you can effectively create the index in one go

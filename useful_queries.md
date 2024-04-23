@@ -132,3 +132,11 @@ FROM partition_data p
 LEFT JOIN actual_indexes a ON a.index_name = p.expected_index_name
 ORDER BY p.partition_table_name;
 ```
+
+disable an index within the context of a transaction for testing
+```sql
+begin;
+drop index objects_snapshot_package_module_name_full_type;
+--- other queries
+rollback;
+```
