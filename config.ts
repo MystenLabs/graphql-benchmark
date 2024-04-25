@@ -6,6 +6,17 @@
  */
 export async function getSuiteConfiguration(suiteName: string) {
   switch (suiteName) {
+    case "balance": {
+      let { queries } = await import("./balance/queries");
+      return {
+        description: "Balance suite description",
+        queries,
+        queryKey: "queryBalance",
+        dataPath: "",
+        typeStringFields: ["address", "coinType"],
+        paramsFilePath: "./balance/parameters.json",
+      };
+    }
     case "transaction-block": {
       let { queries } = await import("./transaction-block/queries");
       return {
@@ -57,19 +68,19 @@ export async function getSuiteConfiguration(suiteName: string) {
     }
     case "dfsByOwner":
     case "dfsByObject":
-    {
-      let { queries } = await import("./dynamic-field/queries");
-      let dataPath = suiteName === "dfsByOwner" ? "owner.dynamicFields.pageInfo" : "object.dynamicFields.pageInfo";
-      let paramsFilePath = suiteName === "dfsByOwner" ? "./dynamic-field/parameters-owner.json" : "./dynamic-field/parameters-object.json";
-      return {
-        description: "Dynamic Fields suite description",
-        queries,
-        queryKey: suiteName,
-        dataPath,
-        typeStringFields: [],
-        paramsFilePath,
-      };
-    }
+      {
+        let { queries } = await import("./dynamic-field/queries");
+        let dataPath = suiteName === "dfsByOwner" ? "owner.dynamicFields.pageInfo" : "object.dynamicFields.pageInfo";
+        let paramsFilePath = suiteName === "dfsByOwner" ? "./dynamic-field/parameters-owner.json" : "./dynamic-field/parameters-object.json";
+        return {
+          description: "Dynamic Fields suite description",
+          queries,
+          queryKey: suiteName,
+          dataPath,
+          typeStringFields: [],
+          paramsFilePath,
+        };
+      }
     default:
       throw new Error(`Unknown suite: ${suiteName}`);
   }
