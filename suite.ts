@@ -36,17 +36,19 @@ export async function runQuerySuite(
   args: Arguments,
 ) {
   const suiteConfig = await getSuiteConfiguration(args.suite);
+  // Unique fields from suiteConfig and args
   const { queries, queryKey, dataPath, typeStringFields } = suiteConfig;
-  let index = args.index;
-  let description = args.description || suiteConfig.description;
+  const { limit, numPages, index, url } = args;
 
-  const client = new SuiGraphQLClient({
-    url: args.url,
-    queries: suiteConfig.queries,
-  });
-
+  // Merge others
+  const description = args.description || suiteConfig.description;
   const jsonFilePath = args.paramsFilePath || suiteConfig.paramsFilePath;
   const inputJsonPathName = path.parse(jsonFilePath).name;
+
+  const client = new SuiGraphQLClient({
+    url,
+    queries
+  });
 
   // Read and parse the JSON file
   const jsonData = fs.readFileSync(
@@ -55,9 +57,6 @@ export async function runQuerySuite(
   );
 
   const parameters = JSON.parse(jsonData) as Parameters<any>;
-
-  let limit = 10;
-  let numPages = 10;
   const query = print(queries[queryKey] as ASTNode).replace(/\n/g, " ");
   const fileName = `${queryKey}-${inputJsonPathName}-${new Date().toISOString()}.json`;
   console.log(
