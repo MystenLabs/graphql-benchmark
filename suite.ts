@@ -132,7 +132,7 @@ export async function queryGeneric<
     ? V
     : Record<string, unknown>,
   dataPath: string, // e.g., 'objects.pageInfo'
-): Promise<{ pageInfo: PageInfo | undefined; variables: typeof variables }> {
+): Promise<{ pageInfo: PageInfo | string; variables: typeof variables }> {
   const options: Omit<GraphQLQueryOptions<any, any>, "query"> = { variables };
 
   let response = await client.execute(queryName, options);
@@ -143,8 +143,21 @@ export async function queryGeneric<
     .split(".")
     .reduce((acc: any, curr: string) => acc?.[curr], data);
 
+  // if response.data and response.errors both undefined, then unexpected
+  if (response.data === undefined && response.errors === undefined) {
+    result = "UNEXPECTED ERROR";
+  }
+  if (response.errors !== undefined) {
+    let errorMessage = response.errors![0].message;
+    if (errorMessage.includes("Request timed out") || errorMessage.includes("statement timeout")) {
+      result = "TIMEOUT";
+    } else {
+      result = errorMessage;
+    }
+  }
+
   return {
-    pageInfo: result ?? undefined, // Fallback to undefined if result is nullish
+    pageInfo: result, // Fallback to undefined if result is nullish
     variables,
   };
 }
