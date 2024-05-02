@@ -3,7 +3,7 @@
 
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
-import { runSelectedSuite } from "./suite";
+import { runQuerySuite } from "./suite";
 
 export interface Arguments {
   suite: string;
@@ -12,6 +12,7 @@ export interface Arguments {
   numPages: number;
   index: number;
   url: string;
+  description: string | undefined;
 }
 
 // Setup yargs
@@ -47,8 +48,12 @@ const argv = yargs(hideBin(process.argv))
     type: "string",
     default: "http://127.0.0.1:8000", // Default URL
   })
+  .option("description", {
+    describe: "The description of the suite",
+    type: "string"
+  })
   .help("h")
   .alias("h", "help")
   .parseSync();
 
-runSelectedSuite(argv as Arguments);
+runQuerySuite(argv as Arguments);

@@ -1,10 +1,26 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { GraphQLDocument } from "@mysten/graphql-transport";
+
+
+export type Queries = Record<string, GraphQLDocument>;
+export type Query = Extract<keyof Queries, string>;
+
+export type SuiteConfig = {
+  description: string;
+  queries: Record<string, GraphQLDocument>;
+  queryKey: Query;
+  dataPath: string;
+  typeStringFields: string[];
+  paramsFilePath: string;
+};
+
+
 /**
  * Maps suites to default configurations, to be overriden by the user.
  */
-export async function getSuiteConfiguration(suiteName: string) {
+export async function getSuiteConfiguration(suiteName: string): Promise<SuiteConfig> {
   switch (suiteName) {
     case "transaction-block": {
       let { queries } = await import("./transaction-block/queries");
