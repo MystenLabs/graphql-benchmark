@@ -1,14 +1,19 @@
 # Quick Start
+`brew install pnpm`
 
 `pnpm install`
 
+`pyenv local 3.11`
+
 `pip3 install -r requirements.txt`
 
-`pnpm ts-node cli.ts --suite transaction-block --params-file-path transaction-block/parameters.json`
+`pnpm ts-node cli.ts --suite transaction-block --params-file-path transaction-block/parameters.json --url your-url`
 
 `python3 analysis.py --file experiments/nameOfOutputFile.json`
 
 Recommend setting `\pset pager off` in your psql session to show results of `explain [analyze]` at once.
+
+To run the Python scripts that interact with postgres, you will need to install libpq and the psycopg2 library.
 
 # Defaults
 

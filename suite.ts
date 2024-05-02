@@ -15,27 +15,6 @@ import { Arguments } from "./cli";
 import { EnsureArraysOnly, generateCombinations } from "./parameterization";
 import { getSuiteConfiguration } from "./config";
 
-export async function runSelectedSuite(args: Arguments) {
-  const suiteConfig = await getSuiteConfiguration(args.suite);
-
-  const client = new SuiGraphQLClient({
-    url: args.url,
-    queries: suiteConfig.queries,
-  });
-
-  const paramsFilePath = args.paramsFilePath || suiteConfig.paramsFilePath;
-
-  runQuerySuite(
-    suiteConfig.description,
-    paramsFilePath,
-    client,
-    suiteConfig.queries,
-    suiteConfig.queryKey,
-    suiteConfig.dataPath,
-    suiteConfig.typeStringFields,
-    args.index,
-  );
-}
 
 export type Queries = Record<string, GraphQLDocument>;
 export type Query = Extract<keyof Queries, string>;
@@ -54,16 +33,22 @@ export type Parameters<T> = {
  * backwards.
  */
 export async function runQuerySuite(
-  description: string,
-  jsonFilePath: string,
-  client: SuiGraphQLClient<Queries>,
-  queries: Record<string, GraphQLDocument>,
-  queryKey: Query, // e.g., 'queryTransactionBlocks' or 'queryEvents'
-  dataPath: string, // e.g., 'objects.pageInfo'
-  typeStringFields: string[],
-  index: number,
+  args: Arguments,
 ) {
+  const suiteConfig = await getSuiteConfiguration(args.suite);
+  // Unique fields from suiteConfig and args
+  const { queries, queryKey, dataPath, typeStringFields } = suiteConfig;
+  const { limit, numPages, index, url } = args;
+
+  // Merge others
+  const description = args.description || suiteConfig.description;
+  const jsonFilePath = args.paramsFilePath || suiteConfig.paramsFilePath;
   const inputJsonPathName = path.parse(jsonFilePath).name;
+
+  const client = new SuiGraphQLClient({
+    url,
+    queries
+  });
 
   // Read and parse the JSON file
   const jsonData = fs.readFileSync(
@@ -72,17 +57,21 @@ export async function runQuerySuite(
   );
 
   const parameters = JSON.parse(jsonData) as Parameters<any>;
-
-  let limit = 50;
-  let numPages = 10;
   const query = print(queries[queryKey] as ASTNode).replace(/\n/g, " ");
   const fileName = `${queryKey}-${inputJsonPathName}-${new Date().toISOString()}.json`;
   console.log(
     "Streaming to file: ",
     path.join(__dirname, "experiments", fileName),
   );
+
+  // Create the directory if it doesn't exist
+  const dir = path.join(__dirname, "experiments");
+  if (!fs.existsSync(dir)){
+      fs.mkdirSync(dir);
+  }
+
   const stream = fs.createWriteStream(
-    path.join(__dirname, "experiments", fileName),
+    path.join(dir, fileName),
     {
       flags: "a",
     },
@@ -120,7 +109,7 @@ export async function runQuerySuite(
       let indexed_report = { index: i, ...report };
       stream.write(`${JSON.stringify(indexed_report, null, 2)}`);
 
-      if (i < totalRuns) {
+      if (i < totalRuns - 1) {
         stream.write(",");
       }
     }
@@ -142,7 +131,7 @@ export async function queryGeneric<
     ? V
     : Record<string, unknown>,
   dataPath: string, // e.g., 'objects.pageInfo'
-): Promise<{ pageInfo: PageInfo | undefined; variables: typeof variables }> {
+): Promise<{ pageInfo: PageInfo | string; variables: typeof variables }> {
   const options: Omit<GraphQLQueryOptions<any, any>, "query"> = { variables };
 
   let response = await client.execute(queryName, options);
@@ -153,8 +142,21 @@ export async function queryGeneric<
     .split(".")
     .reduce((acc: any, curr: string) => acc?.[curr], data);
 
+  // if response.data and response.errors both undefined, then unexpected
+  if (response.data === undefined && response.errors === undefined) {
+    result = "UNEXPECTED ERROR";
+  }
+  if (response.errors !== undefined) {
+    let errorMessage = response.errors![0].message;
+    if (errorMessage.includes("Request timed out") || errorMessage.includes("statement timeout")) {
+      result = "TIMEOUT";
+    } else {
+      result = errorMessage;
+    }
+  }
+
   return {
-    pageInfo: result ?? undefined, // Fallback to undefined if result is nullish
+    pageInfo: result, // Fallback to undefined if result is nullish
     variables,
   };
 }

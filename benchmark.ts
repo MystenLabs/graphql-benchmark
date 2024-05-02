@@ -68,7 +68,7 @@ export async function benchmark_connection_query(
   benchmarkParams: BenchmarkParams,
   testFn: (
     cursor: PaginationParams,
-  ) => Promise<{ pageInfo: PageInfo | undefined; variables: any }>,
+  ) => Promise<{ pageInfo: PageInfo | string; variables: any }>,
 ): Promise<Report> {
   let { paginateForwards, limit, numPages } = benchmarkParams;
 
@@ -88,11 +88,9 @@ export async function benchmark_connection_query(
       queryParams = variables;
     }
 
-    // TODO: this is a bit awkward because we can't tell if we timed out ...
-    // Simple way is just to consider all that exceed the timeout as a timeout
-    if (result == undefined) {
-      console.log("no result returned");
-      // allow warm up for the first 3 iterations
+    if (typeof result === 'string') {
+      console.log(result);
+      // allow up to 3 retries
       if (i == 2) {
         break;
       }
@@ -147,7 +145,7 @@ export function metrics(durations: number[]): Metrics {
 type Report = {
   variables: any;
   cursors: string[];
-  status: "COMPLETED" | "TIMED OUT";
+  status: "COMPLETED" | "TIMED OUT" | "ERROR";
   metrics?: Metrics;
 };
 
