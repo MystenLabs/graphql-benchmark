@@ -7,10 +7,6 @@
 
 `pip3 install -r requirements.txt`
 
-`npm i --save-dev @types/node`
-
-`mkdir experiments analysis`
-
 `pnpm ts-node cli.ts --suite transaction-block --params-file-path transaction-block/parameters.json --url https://sui.rpc.spaceandtime.network/graphql`
 
 `python3 analysis.py --file experiments/nameOfOutputFile.json`
