@@ -73,7 +73,7 @@ export async function runQuerySuite(
 
   const parameters = JSON.parse(jsonData) as Parameters<any>;
 
-  let limit = 50;
+  let limit = 10;
   let numPages = 10;
   const query = print(queries[queryKey] as ASTNode).replace(/\n/g, " ");
   const fileName = `${queryKey}-${inputJsonPathName}-${new Date().toISOString()}.json`;
