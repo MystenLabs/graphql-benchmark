@@ -1,10 +1,17 @@
 # Quick Start
+`brew install pnpm`
 
 `pnpm install`
 
+`pyenv local 3.11`
+
 `pip3 install -r requirements.txt`
 
-`pnpm ts-node cli.ts --suite transaction-block --params-file-path transaction-block/parameters.json`
+`npm i --save-dev @types/node`
+
+`mkdir experiments analysis`
+
+`pnpm ts-node cli.ts --suite transaction-block --params-file-path transaction-block/parameters.json --url https://sui.rpc.spaceandtime.network/graphql`
 
 `python3 analysis.py --file experiments/nameOfOutputFile.json`
 
