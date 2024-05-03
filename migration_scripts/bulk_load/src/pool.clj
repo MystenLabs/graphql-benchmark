@@ -121,3 +121,18 @@
               (map #(->Worker % logger impl work kill* reply))
               (into [supervisor]))]
     [-kill (async/merge threads)]))
+
+(defn signals
+  "Create a map of signals, each represented as an atom.
+
+  This is useful for a running pool to communicate progress with the
+  outside world."
+  [& {:as init}]
+  (->> (map (fn [[k v]] [k (atom v)]) init)
+       (into {})))
+
+(defn signal-swap!
+  "Like `swap!` but acting on an atom in a `signals` map."
+  [signals k f & args]
+  (when-let [a (get signals k)]
+    (apply swap! a f args)))

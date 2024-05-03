@@ -1,28 +1,15 @@
 (ns versions
-  (:require [logger :refer [->Logger] :as l]
-            [pool :refer [->Pool]]
+  (:require [db]
+            [logger :refer [->Logger] :as l]
+            [pool :refer [->Pool signal-swap!]]
             [next.jdbc :as jdbc]
             [clojure.core :as c]
-            [clojure.core.async :as async :refer [go]]
-            [clojure.pprint :refer [cl-format]])
+            [clojure.core.async :as async :refer [go]])
   (:import [org.postgresql.util PSQLException]))
 
-(defn- env [var & [default]]
-  (or (System/getenv var) default))
+(def +object-versions+ "amnn_2_object_versions")
 
-(def db-config
-  {:dbtype   "postgresql"
-   :dbname   (env "DBNAME" "defaultdb")
-   :host     (env "DBHOST" "localhost")
-   :port     (env "DBPORT" "5432")
-   :user     (env "DBUSER" "postgres")
-   :password (env "DBPASS" "postgrespw")})
-
-(def db (jdbc/get-datasource db-config))
-
-(def +object-versions+ "amnn_1_object_versions")
-
-(defn partition [byte]
+(defn partition:name [byte]
   (format "%s_%02x" +object-versions+ byte))
 
 (defn partition:lb
@@ -77,7 +64,7 @@
             object_version     BIGINT,
             cp_sequence_number BIGINT
           )"
-         (partition part))]
+         (partition:name part))]
        (jdbc/execute! db)))
 
 (defn disable-autovacuum!
@@ -127,7 +114,7 @@
            WHERE
                checkpoint_sequence_number BETWEEN ? AND ?
            AND object_id BETWEEN ? AND ?"
-          (partition part))
+          (partition:name part))
          lo (dec hi)
          (partition:lb part)
          (partition:ub part)]
@@ -138,7 +125,7 @@
 
   Readying it to be added to the main table."
   [db part timeout]
-  (let [name (partition part)]
+  (let [name (partition:name part)]
     (as-> [(format "ALTER TABLE %s
                     ADD PRIMARY KEY (object_id, object_version),
                     ALTER COLUMN cp_sequence_number SET NOT NULL,
@@ -162,7 +149,7 @@
   (as-> [(format "ALTER TABLE %s ATTACH PARTITION %s
                   FOR VALUES FROM (%s) TO (%s)"
                  +object-versions+
-                 (partition part)
+                 (partition:name part)
                  (->> part
                       (partition:lb)
                       (partition-literal))
@@ -175,132 +162,148 @@
 (defn object-versions:drop-range-check!
   "Drop the constraint that was added to speed up attaching the partition."
   [db part timeout]
-  (let [name (partition part)]
+  (let [name (partition:name part)]
     (as-> [(format "ALTER TABLE %s DROP CONSTRAINT %s_partition_check"
                    name name)]
         % (jdbc/execute! db % {:timeout timeout}))))
 
-;; (->> [(str "DROP TABLE " +object-versions+)]
-;;      (jdbc/execute! db))
-;; (dotimes [i 256]
-;;   (->> [(str "DROP TABLE " (partition i))]
-;;        (jdbc/execute! db)))
+(defn object-versions:drop-all!
+  "Drop the main table and partitions"
+  [db logger]
+  (->> [(str "DROP TABLE " +object-versions+)]
+       (jdbc/execute! db))
+  (->Pool :name     "drop-partitions"
+          :logger   logger
+          :workers  100
+          :pending  (range 256)
+          :impl     (fn [part reply]
+                      (->> [(str "DROP TABLE " (partition:name part))]
+                           (jdbc/execute! db))
+                      (reply true))
+          :finalize (fn [_] nil)))
 
-;; (object-versions:create! db)
-;; (dotimes [i 256]
-;;   (go (object-versions:create-partition! db i)
-;;       (autovacuum! db (partition i) false)))
+(defn object-versions:create-all!
+  "Create the main table, (with constraints and indices) and all
+  partitions (without constraints and indices)."
+  [db logger timeout]
+  (object-versions:create! db)
+  (->Pool :name     "create-partitions"
+          :logger   logger
+          :workers  100
+          :pending  (range 256)
+          :impl     (fn [part reply]
+                      (object-versions:create-partition! db part)
+                      (disable-autovacuum! db (partition:name part) timeout)
+                      (reply true))
+          :finalize (fn [_] nil)))
 
-;; ;; Observability into thread pool
-;; (def logger (->Logger *out*))
-;; (def row-count   (atom 0))
-;; (def vacuumed    (atom 0))
-;; (def analyzed    (atom 0))
-;; (def constrained (atom 0))
-;; (def attached    (atom 0))
-;; (def finished    (atom 0))
-;; (def failed-jobs (atom []))
+(defn object-versions:bulk-load!
+  "Bulk load all object versions from `objects_history` to the partition tables.
 
-;; ;; Bulk loading thread pool
-;; (let [max-cp (inc (max-checkpoint db))
-;;       batch   1000000
-;;       timeout 600
+  If `signals` includes a `:row-count` key, it will be updated with
+  the number of rows inserted.
 
-;;       pending
-;;       (for [lo (range 0 max-cp batch)
-;;             :let [hi (min (+ lo batch) max-cp)]
-;;             part (range 256)]
-;;         {:lo lo :hi hi :part part :retries 3})
+  Returns a `kill` channel and a `join` channel for interacting with
+  the job as it is in progress."
+  [db logger timeout signals]
+  (let [max-cp (inc (max-checkpoint db)) batch  1000000]
+    (->Pool :name "bulk-load"
+            :logger logger
+            :workers 100
 
-;;       do-work
-;;       (fn [{:as batch :keys [lo hi part]} reply]
-;;         (try (->> (object-versions:populate! db part lo hi timeout)
-;;                   first :next.jdbc/update-count
-;;                   (assoc batch
-;;                          :status :success
-;;                          :updated)
-;;                   (reply))
-;;              (catch PSQLException e
-;;                (if (= "57014" (.getSQLState e))
-;;                  (reply (assoc batch :status :timeout))
-;;                  (reply (assoc batch :status :error :error e))))
-;;              (catch Throwable t
-;;                (reply (assoc batch :status :error :error t)))))
+            :pending
+            (for [lo (range 0 max-cp batch)
+                  :let [hi (min (+ lo batch) max-cp)]
+                  part (range 256)]
+              {:lo lo :hi hi :part part :retries 3})
 
-;;       finalize
-;;       (fn [{:keys [lo hi part retries status updated]}]
-;;         (case status
-;;           :success
-;;           (do (swap! row-count + updated) nil)
+            :impl
+            (fn [{:as batch :keys [lo hi part]} reply]
+              (try (->> (object-versions:populate! db part lo hi timeout)
+                        first :next.jdbc/update-count
+                        (assoc batch
+                               :status :success
+                               :updated)
+                        (reply))
+                   (catch PSQLException e
+                     (if (= "57014" (.getSQLState e))
+                       (reply (assoc batch :status :timeout))
+                       (reply (assoc batch :status :error :error e))))
+                   (catch Throwable t
+                     (reply (assoc batch :status :error :error t)))))
 
-;;           :timeout
-;;           (let [m (+ lo (quot (- hi lo) 2))]
-;;             (and (not= lo m)
-;;                  [{:lo lo :hi m :part part :retries retries}
-;;                   {:lo m :hi hi :part part :retries retries}]))
+            :finalize
+            (fn [{:keys [lo hi part retries status updated]}]
+              (case status
+                :success
+                (do (signal-swap! signals :row-count + updated) nil)
 
-;;           :error
-;;           (and (not= 0 retries)
-;;                [{:lo lo :hi hi :part part :retries (dec retries)}])))]
-;;   (->Pool :name     "bulk-load"
-;;           :logger   logger
-;;           :pending  pending
-;;           :impl     do-work
-;;           :finalize finalize
-;;           :workers  100))
+                :timeout
+                (let [m (+ lo (quot (- hi lo) 2))]
+                  (and (not= lo m)
+                       [{:lo lo :hi m :part part :retries retries}
+                        {:lo m :hi hi :part part :retries retries}]))
 
-;; ;; Attachment thread pool
-;; (let [delta-t 600
+                :error
+                (and (not= 0 retries)
+                     [{:lo lo :hi hi :part part :retries (dec retries)}]))))))
 
-;;       pending
-;;       (for [part (range 256)]
-;;         {:part part :job :autovacuum :timeout delta-t})
+(defn object-versions:index-and-attach!
+  "Add indices and constraints to the partitions and attach them to the
+  main table.
 
-;;       do-work
-;;       (fn [{:as batch :keys [part job timeout]} reply]
-;;         (try
-;;           (case job
-;;             :autovacuum (reset-autovacuum! db (partition part) timeout)
-;;             :analyze    (vacuum-and-analyze! db (partition part) timeout)
-;;             :constrain  (object-versions:constrain! db part timeout)
-;;             :attach     (object-versions:attach! db part timeout)
-;;             :drop-check (object-versions:drop-range-check! db part timeout))
-;;           (reply (assoc batch :status :success))
-;;           (catch PSQLException e
-;;             (if (= "57014" (.getSQLState e))
-;;               (reply (assoc batch :status :timeout))
-;;               (reply (assoc batch :status :error :error e))))
-;;           (catch Throwable t
-;;             (reply (assoc batch :status :error :error t)))))
+  If `signals` includes a `:autovacuum`, `:analyze`, `:constrain`,
+  `:attach`, and `:drop-check` key, they will be updated with the
+  number of partitions that have reached that phase of the process.
 
-;;       finalize
-;;       (fn [{:as batch :keys [part job status timeout]}]
-;;         (case status
-;;           :success ;; Queue the next phase for this partition
-;;           (case job
-;;             :autovacuum
-;;             (do (swap! vacuumed inc)
-;;                 [{:timeout delta-t :part part :job :analyze}])
-;;             :analyze
-;;             (do (swap! analyzed inc)
-;;                 [{:timeout delta-t :part part :job :constrain}])
-;;             :constrain
-;;             (do (swap! constrained inc)
-;;                 [{:timeout delta-t :part part :job :attach}])
-;;             :attach
-;;             (do (swap! attached inc)
-;;                 [{:timeout delta-t :part part :job :drop-check}])
-;;             :drop-check
-;;             (do (swap! finished inc) nil))
+  If `signals` contains a `failed-jobs` key, it will be updated with a
+  list of jobs that failed with some error (other than timeouts).
 
-;;           :timeout ;; Retry a timed out job with an incrementally longer timeout
-;;           [{:part part :job job :timeout (+ timeout delta-t)}]
+  `delta-t` specifies the increment of time that we use to update
+  timeouts with: If a job times out, we re-queue it with a timeout
+  that is `delta-t` seconds bigger (`delta-t` is also the initial
+  timeout).
 
-;;           :error   ;; Record failed jobs but keep going
-;;           (do (swap! failed-jobs conj batch) nil)))]
-;;   (->Pool :name     "attach"
-;;           :logger   logger
-;;           :pending  pending
-;;           :impl     do-work
-;;           :finalize finalize
-;;           :workers  10))
+  Returns a `kill` channel and a `join` channel for interacting with
+  the job as it is in progress."
+  [db logger delta-t signals]
+  (->Pool :name "attach"
+          :logger logger
+          :workers 100
+
+          :pending
+          (for [part (range 256)]
+            {:part part :job :autovacuum :timeout delta-t})
+
+          :impl
+          (fn [{:as batch :keys [part job timeout]} reply]
+            (try
+              (case job
+                :autovacuum (reset-autovacuum! db (partition:name part) timeout)
+                :analyze    (vacuum-and-analyze! db (partition:name part) timeout)
+                :constrain  (object-versions:constrain! db part timeout)
+                :attach     (object-versions:attach! db part timeout)
+                :drop-check (object-versions:drop-range-check! db part timeout))
+              (reply (assoc batch :status :success))
+              (catch PSQLException e
+                (if (= "57014" (.getSQLState e))
+                  (reply (assoc batch :status :timeout))
+                  (reply (assoc batch :status :error :error e))))
+              (catch Throwable t
+                (reply (assoc batch :status :error :error t)))))
+
+          :finalize
+          (fn [{:as batch :keys [part job status timeout]}]
+            (let [phases [:autovacuum :analyze :constrain :attach :drop-check]
+                  edges  (into {} (map vector phases (rest phases)))]
+              (case status
+                :success
+                (do (signal-swap! signals job inc)
+                    (when-let [next (edges job)]
+                      [{:timeout delta-t :part part :job next}]))
+
+                :timeout
+                [{:part part :job job :timeout (+ timeout delta-t)}]
+
+                :error
+                (do (signal-swap! signals :failed-jobs conj batch) nil))))))
