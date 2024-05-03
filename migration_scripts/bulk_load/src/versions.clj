@@ -7,10 +7,10 @@
             [clojure.core.async :as async :refer [go]])
   (:import [org.postgresql.util PSQLException]))
 
-(def +object-versions+ "amnn_2_object_versions")
+(def +objects-version+ "objects_version")
 
 (defn partition:name [byte]
-  (format "%s_%02x" +object-versions+ byte))
+  (format "%s_%02x" +objects-version+ byte))
 
 (defn partition:lb
   "Inclusive lower bound of the `part`ition, represented as a byte array."
@@ -35,7 +35,7 @@
     (doseq [b bytes] (printf "%02x" b))
     (print "'")))
 
-(defn object-versions:create!
+(defn objects-version:create!
   "Create the main object versions table.
 
   We set-up all its indices and constraints up-front because we will
@@ -49,10 +49,10 @@
             PRIMARY KEY (object_id, object_version)
           )
           PARTITION BY RANGE (object_id)"
-         +object-versions+)]
+         +objects-version+)]
        (jdbc/execute! db)))
 
-(defn object-versions:create-partition!
+(defn objects-version:create-partition!
   "Create a table for a specific partition of object versions.
 
   New partitions don't get any constraints or indices, to make it
@@ -94,7 +94,7 @@
             (jdbc/execute-one! db)
             (:max)))
 
-(defn object-versions:populate!
+(defn objects-version:populate!
   "Populate a specific partition table with object versions from the
   history table between checkpoints `lo` (inclusive) and
   `hi` (exclusive). Applies a timeout, in seconds to the request."
@@ -120,7 +120,7 @@
          (partition:ub part)]
       % (jdbc/execute! db % {:timeout timeout})))
 
-(defn object-versions:constrain!
+(defn objects-version:constrain!
   "Add constraints to a given `part`ition.
 
   Readying it to be added to the main table."
@@ -143,12 +143,12 @@
                         (if (= part 255) "")))]
         % (jdbc/execute! db % {:timeout timeout}))))
 
-(defn object-versions:attach!
+(defn objects-version:attach!
   "Attach a partition to the main table."
   [db part timeout]
   (as-> [(format "ALTER TABLE %s ATTACH PARTITION %s
                   FOR VALUES FROM (%s) TO (%s)"
-                 +object-versions+
+                 +objects-version+
                  (partition:name part)
                  (->> part
                       (partition:lb)
@@ -159,7 +159,7 @@
                       (if (= part 255) "MAXVALUE")))]
       % (jdbc/execute! db % {:timeout timeout})))
 
-(defn object-versions:drop-range-check!
+(defn objects-version:drop-range-check!
   "Drop the constraint that was added to speed up attaching the partition."
   [db part timeout]
   (let [name (partition:name part)]
@@ -167,10 +167,10 @@
                    name name)]
         % (jdbc/execute! db % {:timeout timeout}))))
 
-(defn object-versions:drop-all!
+(defn objects-version:drop-all!
   "Drop the main table and partitions"
   [db logger]
-  (->> [(str "DROP TABLE " +object-versions+)]
+  (->> [(str "DROP TABLE " +objects-version+)]
        (jdbc/execute! db))
   (->Pool :name     "drop-partitions"
           :logger   logger
@@ -182,22 +182,22 @@
                       (reply true))
           :finalize (fn [_] nil)))
 
-(defn object-versions:create-all!
+(defn objects-version:create-all!
   "Create the main table, (with constraints and indices) and all
   partitions (without constraints and indices)."
   [db logger timeout]
-  (object-versions:create! db)
+  (objects-version:create! db)
   (->Pool :name     "create-partitions"
           :logger   logger
           :workers  100
           :pending  (range 256)
           :impl     (fn [part reply]
-                      (object-versions:create-partition! db part)
+                      (objects-version:create-partition! db part)
                       (disable-autovacuum! db (partition:name part) timeout)
                       (reply true))
           :finalize (fn [_] nil)))
 
-(defn object-versions:bulk-load!
+(defn objects-version:bulk-load!
   "Bulk load all object versions from `objects_history` to the partition tables.
 
   If `signals` includes a `:row-count` key, it will be updated with
@@ -209,7 +209,7 @@
   (let [max-cp (inc (max-checkpoint db)) batch  1000000]
     (->Pool :name "bulk-load"
             :logger logger
-            :workers 100
+            :workers 20
 
             :pending
             (for [lo (range 0 max-cp batch)
@@ -219,7 +219,7 @@
 
             :impl
             (fn [{:as batch :keys [lo hi part]} reply]
-              (try (->> (object-versions:populate! db part lo hi timeout)
+              (try (->> (objects-version:populate! db part lo hi timeout)
                         first :next.jdbc/update-count
                         (assoc batch
                                :status :success
@@ -248,7 +248,7 @@
                 (and (not= 0 retries)
                      [{:lo lo :hi hi :part part :retries (dec retries)}]))))))
 
-(defn object-versions:index-and-attach!
+(defn objects-version:index-and-attach!
   "Add indices and constraints to the partitions and attach them to the
   main table.
 
@@ -281,9 +281,9 @@
               (case job
                 :autovacuum (reset-autovacuum! db (partition:name part) timeout)
                 :analyze    (vacuum-and-analyze! db (partition:name part) timeout)
-                :constrain  (object-versions:constrain! db part timeout)
-                :attach     (object-versions:attach! db part timeout)
-                :drop-check (object-versions:drop-range-check! db part timeout))
+                :constrain  (objects-version:constrain! db part timeout)
+                :attach     (objects-version:attach! db part timeout)
+                :drop-check (objects-version:drop-range-check! db part timeout))
               (reply (assoc batch :status :success))
               (catch PSQLException e
                 (if (= "57014" (.getSQLState e))
