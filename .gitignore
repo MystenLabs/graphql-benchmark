@@ -4,3 +4,5 @@ experiments
 analysis
 write_to_db.py
 .env
+.cpcache
+.nrepl-port
