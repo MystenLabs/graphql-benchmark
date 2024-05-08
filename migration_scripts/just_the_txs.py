@@ -42,10 +42,10 @@ conn_params = {
     'user': os.getenv('DB_USER'),
     'password': os.getenv('DB_PASSWORD'),
     'host': os.getenv('DB_HOST'),
-    'port': os.getenv('DB_PORT'),
+    'port': os.getenv('DB_PORT')
 }
 
-max_connections = 200
+max_connections = 100
 connection_pool = psycopg2.pool.SimpleConnectionPool(1, max_connections, **conn_params)
 
 
@@ -54,7 +54,16 @@ def latest_tx_sequence_number():
     conn = connection_pool.getconn()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT MAX(tx_sequence_number) FROM transactions;")
+            cur.execute("SELECT MAX(tx_sequence_number) FROM tx_addresses;")
+            return cur.fetchone()[0]
+    finally:
+        connection_pool.putconn(conn)
+
+def latest_cp_sequence_number():
+    conn = connection_pool.getconn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT MAX(sequence_number) FROM checkpoints;")
             return cur.fetchone()[0]
     finally:
         connection_pool.putconn(conn)
@@ -63,41 +72,23 @@ def latest_tx_sequence_number():
 def process_range(pbar, thread_id, func, start, end, chunk_size = 10000):
     """Process start and end range in chunks of chunk_size"""
     conn = connection_pool.getconn()
+    completed = 0
     try:
         for idx in range(start, end + 1, chunk_size):
             if shutdown_requested:
+                conn.cancel()
                 log_shutdown(thread_id, idx, end)
                 return
             end_of_chunk = min(idx + chunk_size - 1, end)
             func(conn, idx, end_of_chunk)
             pbar.update(chunk_size)
+            completed += chunk_size
     except Exception as e:
-        log_error(thread_id, start, end, str(e))
+        log_error(thread_id, start + completed, end, str(e))
         raise
     finally:
         connection_pool.putconn(conn)
 
-
-def setup_unpartitioned_table(conn, start, end):
-    """Populates the unpartitioned table of (tx_sequence_number, checkpoint_sequence_number) """
-    query = """
-    WITH txs AS (
-        SELECT tx_sequence_number, checkpoint_sequence_number
-        FROM transactions
-        WHERE tx_sequence_number BETWEEN %s AND %s
-    )
-    INSERT INTO tx_sequence_numbers (tx_sequence_number, checkpoint_sequence_number)
-    SELECT tx_sequence_number, checkpoint_sequence_number
-    FROM txs
-    ON CONFLICT (tx_sequence_number) DO NOTHING;
-    """
-    try:
-        with conn.cursor() as cur:
-            cur.execute(query, (start, end))
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        print(f"Error updating tx_sequence_numbers table: {e}")
 
 
 def update_address_with_cp(conn, start, end, rel):
@@ -106,50 +97,52 @@ def update_address_with_cp(conn, start, end, rel):
     tables will derive the necessary data from these two address tables.
     """
     query = f"""
-    WITH txs AS (
-        SELECT tx_sequence_number, checkpoint_sequence_number
-        FROM tx_sequence_numbers
+    WITH filtered_transactions AS (
+        SELECT tx_sequence_number, checkpoint_sequence_number, transaction_kind
+        FROM transactions
         WHERE tx_sequence_number BETWEEN %s AND %s
     ),
-    partial AS (
-        SELECT txs.tx_sequence_number, txs.checkpoint_sequence_number, {rel}
-        FROM tx_{rel}s
-        JOIN txs USING (tx_sequence_number)
+    filtered_recipients AS (
+        SELECT tx_sequence_number, cp_sequence_number, recipient
+        FROM tx_recipients
+        WHERE tx_sequence_number BETWEEN %s AND %s order by tx_sequence_number
     )
-    INSERT INTO tx_{rel}s_cp (tx_sequence_number, checkpoint_sequence_number, address)
-    SELECT tx_sequence_number, checkpoint_sequence_number, {rel}
-    FROM partial
-    ON CONFLICT (address, tx_sequence_number, checkpoint_sequence_number) DO NOTHING;
+    -- Insert using a simpler join
+    INSERT INTO tx_recipients_rel (cp_sequence_number, tx_sequence_number, recipient, transaction_kind)
+    SELECT r.cp_sequence_number, r.tx_sequence_number, r.recipient, t.transaction_kind
+    FROM filtered_transactions t
+    JOIN filtered_recipients r ON t.tx_sequence_number = r.tx_sequence_number AND t.checkpoint_sequence_number = r.cp_sequence_number;
     """
     try:
         with conn.cursor() as cur:
-            cur.execute(query, (start, end))
+            # cur.execute("SET statement_timeout = 20000;")
+            cur.execute(query, (start, end, start, end))
         conn.commit()
     except Exception as e:
-        conn.rollback()
-        print(f"Error updating tx_{rel}s_cp table: {e}")
+        print(query % (start, end, start, end))
+        print(f"Error updating tx_{rel}s table: {e}")
 
 def create_merged_address_table(conn, start, end):
     query = """
     WITH s AS (
-        SELECT * FROM tx_senders_cp WHERE tx_sequence_number BETWEEN %s AND %s
+        SELECT sender as address, * FROM tx_senders WHERE tx_sequence_number BETWEEN %s AND %s
     ),
     r AS (
-        SELECT * FROM tx_recipients_cp WHERE tx_sequence_number BETWEEN %s AND %s
+        SELECT recipient as address, * FROM tx_recipients WHERE tx_sequence_number BETWEEN %s AND %s
     )
-    INSERT INTO tx_addresses (tx_sequence_number, address, checkpoint_sequence_number, rel)
+    INSERT INTO tx_addresses (tx_sequence_number, address, cp_sequence_number, rel)
     SELECT
         COALESCE(s.tx_sequence_number, r.tx_sequence_number) AS tx_sequence_number,
         COALESCE(s.address, r.address) AS address,
-        COALESCE(s.checkpoint_sequence_number, r.checkpoint_sequence_number) AS checkpoint_sequence_number,
+        COALESCE(s.cp_sequence_number, r.cp_sequence_number) AS cp_sequence_number,
         CASE
             WHEN s.address IS NOT NULL AND r.address IS NULL THEN 0 -- Sender
-            WHEN s.address IS NULL AND r.address IS NOT NULL THEN 1 -- Recipient
-            ELSE 2 -- SenderAndRecipient
+            WHEN s.address IS NULL AND r.address IS NOT NULL THEN 2 -- Recipient
+            ELSE 1 -- SenderAndRecipient
         END AS rel
     FROM s
-    FULL OUTER JOIN r ON s.tx_sequence_number = r.tx_sequence_number AND s.checkpoint_sequence_number = r.checkpoint_sequence_number AND s.address = r.address
-    ON CONFLICT (tx_sequence_number, rel, address, checkpoint_sequence_number) DO NOTHING;
+    FULL OUTER JOIN r ON s.tx_sequence_number = r.tx_sequence_number AND s.address = r.address
+    ON CONFLICT (address, tx_sequence_number, cp_sequence_number) DO NOTHING;
     """
     try:
         with conn.cursor() as cur:
@@ -171,22 +164,23 @@ def update_table_with_addr(conn, start, end, table, new_table_name, fields, prim
 
     query = f"""
     WITH txs AS (
-        SELECT tx_sequence_number, checkpoint_sequence_number, address, rel
+        SELECT tx_sequence_number, cp_sequence_number, address, rel
         FROM tx_addresses
         WHERE tx_sequence_number BETWEEN %s AND %s
     ),
     partial AS (
-        SELECT {', '.join(fields)}, txs.tx_sequence_number, txs.checkpoint_sequence_number, txs.address, txs.rel
+        SELECT {', '.join(fields)}, txs.tx_sequence_number, txs.cp_sequence_number, txs.address, txs.rel
         FROM {table}
         JOIN txs USING (tx_sequence_number)
     )
-    INSERT INTO {new_table_name} (tx_sequence_number, checkpoint_sequence_number, address, rel, {', '.join(fields)})
-    SELECT tx_sequence_number, checkpoint_sequence_number, address, rel, {', '.join(fields)}
+    INSERT INTO {new_table_name} (tx_sequence_number, cp_sequence_number, address, rel, {', '.join(fields)})
+    SELECT tx_sequence_number, cp_sequence_number, address, rel, {', '.join(fields)}
     FROM partial
     {handle_primary_key_conflict};
     """
     try:
         with conn.cursor() as cur:
+            # cur.execute("SET LOCAL statement_timeout = 5000;")
             cur.execute(query, (start, end))
         conn.commit()
     except Exception as e:
@@ -200,10 +194,9 @@ def start_threads(func, start, end, thread_ranges=[]):
         print("Initializing range for each thread to process")
         thread_ranges = [(start + i * range_per_thread, min(start + (i + 1) * range_per_thread - 1, end)) for i in range(max_connections)]
     else:
-        # extract min and max from thread_ranges
-        start = min([start for start, _ in thread_ranges])
-        end = max([end for _, end in thread_ranges])
-        total_range = end - start + 1
+        total_range = 0
+        for start, end in thread_ranges:
+            total_range += end - start + 1
 
     # fan-out
     with tqdm(total=total_range, desc="Processing checkpoints") as pbar:
@@ -224,33 +217,29 @@ def start_threads(func, start, end, thread_ranges=[]):
                 except Exception as e:
                     print(f"Error during database update operation: {e}")
 
-def resume_from_log(log_file):
-    thread_ranges = process_log(log_file)
-    for start, end in thread_ranges:
-        start_threads(setup_unpartitioned_table, start, end)
+
 
 def process_log(log_file):
-    pattern = r"root - INFO - Thread (\d+) shutdown at range (\d+)-(\d+)"
+    pattern = r'(\d+)-(\d+)'
     thread_ranges = []
     with open(log_file) as f:
         for line in f:
-            match = re.match(pattern, line)
+            match = re.search(pattern, line)
             if match:
-                _, start, end = match.groups()
+                start, end = match.groups()
                 thread_ranges.append((int(start), int(end)))
     return thread_ranges
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--setup", help="Creates an unpartitioned table of columns `tx_sequence_number` and `checkpoint_sequence_number`", action="store_true")
     parser.add_argument("--start", help="Start of the range to process", type=int, default=0)
     parser.add_argument("--end", help="End of the range to process", type=int)
     parser.add_argument("--resume", help="Continue processing per a log file", action="store_true")
     parser.add_argument("--log", help="Log file to continue processing", type=str)
     parser.add_argument("--add-addresses", help="Add address (sender or recipient) to the table", action="store_true")
     parser.add_argument("--rel", help="Relation to update", type=str, default='sender')
-    parser.add_argument("--add-cp", help="Add checkpoint_sequence_number to the table", action="store_true")
+    parser.add_argument("--add-tx-kind", help="Add transaction_kind to the table", action="store_true")
     parser.add_argument("--table", help="Table to update", type=str)
     parser.add_argument("--merge-addresses", help="Merge sender and recipient addresses", action="store_true")
 
@@ -265,42 +254,28 @@ if __name__ == '__main__':
     else:
         end_tx = latest_tx_sequence_number()
 
-    if args.setup:
-        start_threads(setup_unpartitioned_table, args.start, end_tx, thread_ranges)
-    elif args.add_cp:
-        if args.table == 'tx_senders':
+    if args.add_tx_kind:
+        if args.table == 'tx_senders' or args.table == 'tx_recipients':
+            rel = 'sender' if args.table == 'tx_senders' else 'recipient'
             def update_table_wrapper(conn, start, end):
-                update_address_with_cp(conn, start, end, 'sender')
-            start_threads(update_table_wrapper, args.start, end_tx, thread_ranges)
-        elif args.table == 'tx_recipients':
-            def update_table_wrapper(conn, start, end):
-                update_address_with_cp(conn, start, end, 'recipient')
-            start_threads(update_table_wrapper, args.start, end_tx, thread_ranges)
+                update_address_with_cp(conn, start, end, rel)
+            start_threads(update_table_wrapper, args.start, latest_tx_sequence_number(), thread_ranges)
     elif args.merge_addresses:
         start_threads(create_merged_address_table, args.start, end_tx, thread_ranges)
     elif args.add_addresses:
         if args.table == 'tx_calls':
             def update_table_wrapper(conn, start, end):
                 fields = ['package', 'module', 'func']
-                primary_key = ['package', 'module', 'func', 'address', 'tx_sequence_number']
-                new_table_name = 'tx_calls_cp'
-                update_table_with_addr(conn, start, end, 'tx_calls', new_table_name, fields, primary_key)
+                new_table_name = 'tx_calls_rel'
+                update_table_with_addr(conn, start, end, 'tx_calls', new_table_name, fields, None)
         elif args.table == 'tx_changed_objects':
             def update_table_wrapper(conn, start, end):
                 fields = ['object_id']
-                # primary_key = ['object_id', 'address', 'tx_sequence_number']
-                new_table_name = 'tx_changed_objects_cp'
+                new_table_name = 'tx_changed_objects_rel'
                 update_table_with_addr(conn, start, end, 'tx_changed_objects', new_table_name, fields, None)
         elif args.table == 'tx_input_objects':
             def update_table_wrapper(conn, start, end):
                 fields = ['object_id']
-                # primary_key = ['object_id', 'address', 'tx_sequence_number']
-                new_table_name = 'tx_input_objects_cp'
+                new_table_name = 'tx_input_objects_rel'
                 update_table_with_addr(conn, start, end, 'tx_input_objects', new_table_name, fields, None)
-        elif args.table == 'tx_digests':
-            def update_table_wrapper(conn, start, end):
-                fields = ['tx_digest']
-                primary_key = ['tx_digest', 'address']
-                new_table_name = 'tx_digests'
-                update_table_with_addr(conn, start, end, 'tx_digests', new_table_name, fields, None)
         start_threads(update_table_wrapper, args.start, end_tx, thread_ranges)
