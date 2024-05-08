@@ -7,7 +7,7 @@ import argparse
 
 def format_bytea(bytea_value):
     """Formats a list of bytes into a PostgreSQL bytea literal in hex format."""
-    return f"'\\x{''.join(format(byte, '02x') for byte in bytea_value)}'"
+    return f"'\\x{''.join(format(byte, '02x') for byte in bytea_value)}'::bytea"
 
 def parse_binds_from_comment(sql):
     """Parses the bind values from the SQL comment."""
@@ -25,6 +25,9 @@ def replace_placeholders(sql, binds):
 
         if isinstance(value, list) and all(isinstance(byte, int) and 0 <= byte <= 255 for byte in value):
             formatted_value = format_bytea(value)
+        # list of list of bytes
+        elif isinstance(value, list) and all(isinstance(byte, list) and all(isinstance(b, int) and 0 <= b <= 255 for b in byte) for byte in value):
+            formatted_value = f"ARRAY[{', '.join(format_bytea(byte) for byte in value)}]"
         elif isinstance(value, str):
             formatted_value = f"'{value}'"
         else:
