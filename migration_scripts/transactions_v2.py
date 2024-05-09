@@ -4,9 +4,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
+from psycopg2 import OperationalError, IntegrityError, ProgrammingError
 from tqdm import tqdm
 import argparse
 import logging
+from typing import List
 from dotenv import load_dotenv
 
 def signal_handler(signum, frame):
@@ -49,7 +51,8 @@ def create_main_table_statement():
         events BYTEA[] NOT NULL,
         transaction_kind SMALLINT NOT NULL,
         success_command_count SMALLINT NOT NULL
-    );
+    )
+    PARTITION BY RANGE (tx_sequence_number);
     """
 
 def create_partition_statement(n):
@@ -136,6 +139,7 @@ def migrate_partition(thread_id, conn, start_tx, end_tx, to_partition):
         print(e.diag.severity)
         print(e.diag.message_primary)
     except Exception as e:
+        conn.rollback()
         print(f"Error migrating partition {to_partition}: {e}")
         log_error(thread_id, start_tx, end_tx, f"Error migrating partition {to_partition}: {e}")
 
@@ -201,35 +205,104 @@ def process_partition(partition_id):
         turn_autovacuum_on(conn, partition_id)
         add_constraints(conn, partition_id)
         attach_partitions(conn, partition_id)
+    except Exception as e:
+        print(f"Error processing partition {partition_id}: {e}")
     finally:
         print(f"Finished processing partition {partition_id}")
         connection_pool.putconn(conn)
 
 def turn_autovacuum_on(conn, partition_id):
-    with conn.cursor() as cur:
-        cur.execute(f"ALTER TABLE transactions_v2_{partition_id} SET (autovacuum_enabled = true);")
-        cur.execute(f"VACUUM ANALYZE transactions_v2_{partition_id};")
-        conn.commit()
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"ALTER TABLE transactions_v2_{partition_id} SET (autovacuum_enabled = true);")
+            cur.execute(f"VACUUM ANALYZE transactions_v2_{partition_id};")
+    except psycopg2.Error as e:
+        print(f"Error vacuum analyze {partition_id}: {e.pgcode} {e.pgerror} {e.diag.severity} {e.diag.message_primary}")
 
 def add_constraints(conn, partition_id):
-    with conn.cursor() as cur:
-        cur.execute(f"""
-            ALTER TABLE transactions_v2_{partition_id} ADD PRIMARY KEY (tx_sequence_number),
-            ADD CONSTRAINT transactions_v2_{partition_id}_partition_check CHECK (tx_sequence_number >= {partition_id * 10000000} AND tx_sequence_number < {(partition_id + 1) * 10000000});""")
-        conn.commit()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                ALTER TABLE transactions_v2_{partition_id} ADD PRIMARY KEY (tx_sequence_number),
+                ADD CONSTRAINT transactions_v2_{partition_id}_partition_check CHECK (tx_sequence_number >= {partition_id * 10000000} AND tx_sequence_number < {(partition_id + 1) * 10000000});""")
+            conn.commit()
+    except psycopg2.Error as e:
+        print(f"Error setting up constraints {partition_id}: {e.pgcode} {e.pgerror} {e.diag.severity} {e.diag.message_primary}")
+        conn.rollback()
 
 def attach_partitions(conn, partition_id):
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"ALTER TABLE transactions_v2 ATTACH PARTITION transactions_v2_{partition_id} FOR VALUES FROM ({partition_id * 10000000}) TO ({(partition_id + 1) * 10000000});")
+            cur.execute(f"ALTER TABLE transactions_v2_{partition_id} DROP CONSTRAINT transactions_v2_{partition_id}_partition_check;")
+            conn.commit()
+    except psycopg2.Error as e:
+        print(f"Error attaching partition {partition_id}: {e.pgcode} {e.pgerror} {e.diag.severity} {e.diag.message_primary}")
+        conn.rollback()
+
+def add_indexes(partitions: int, index_name: str, table_name: str, index_cols: List[str]):
+    conn = connection_pool.getconn()
     with conn.cursor() as cur:
-        cur.execute(f"ALTER TABLE transactions_v2 ATTACH PARTITION transactions_v2_{partition_id} FOR VALUES FROM ({partition_id * 10000000}) TO ({(partition_id + 1) * 10000000});")
-        cur.execute(f"ALTER TABLE transactions_v2_{partition_id} DROP CONSTRAINT transactions_v2_{partition_id}_partition_check;")
+        cur.execute(f"CREATE INDEX IF NOT EXISTS {index_name} ON ONLY {table_name} ({','.join(index_cols)});")
         conn.commit()
+    connection_pool.putconn(conn)
+
+    with ThreadPoolExecutor(max_workers=partitions) as executor:
+        futures = [executor.submit(add_index_handler, index_name, i, table_name, index_cols) for i in range(partitions)]
+
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as e:
+                print(f"Error during database update operation: {e}")
+
+def add_index_handler(index_name, partition_id, table_name, index_cols):
+    print(f"Processing partition {partition_id}")
+    conn = connection_pool.getconn()
+    try:
+        add_index(conn, index_name, partition_id, table_name, index_cols)
+    except Exception as e:
+        print(f"Error processing partition {partition_id}: {e}")
+    finally:
+        print(f"Finished processing partition {partition_id}")
+        connection_pool.putconn(conn)
+
+def add_index(conn, index_name, partition_id, table_name, index_cols):
+    try:
+        with conn.cursor() as cur:
+            cur.execute(create_partition_index_statement(index_name, partition_id, table_name, index_cols))
+            cur.execute(attach_index_partition_statement(index_name, partition_id))
+            conn.commit()
+    except psycopg2.Error as e:
+        print(f"Error creating index {partition_id}: {e.pgcode} {e.pgerror} {e.diag.severity} {e.diag.message_primary}")
+        conn.rollback()
+
+def attach_index_partition_statement(index_name, partition_id):
+    return f"""
+    ALTER INDEX {index_name} ATTACH PARTITION {index_name}_{partition_id};
+    """
+
+def create_partition_index_statement(index_name, partition_id, table_name, index_cols: List[str]):
+    return f"""
+    CREATE INDEX IF NOT EXISTS {index_name}_{partition_id} ON {table_name}_{partition_id} ({','.join(index_cols)});
+    """
+
 
 if __name__ == "__main__":
     load_dotenv()
     parser = argparse.ArgumentParser()
+
     parser.add_argument("--bulk-load", action="store_true", required=False, help="bulk load transactions from a file")
     parser.add_argument("--reset-db", action="store_true", required=False, help="reset the database", default=False)
+
     parser.add_argument("--attach-partitions", action="store_true", required=False, help="attach partitions to main table")
+
+    parser.add_argument("--add-indexes", action="store_true", required=False, help="add indexes to partitions")
+    parser.add_argument("--index-name", required=False, help="name of the index to add")
+    parser.add_argument("--table-name", required=False, help="name of the table to add the index to")
+    parser.add_argument("--index-cols", nargs='+', required=False, help="List of columns to index, separated by spaces.")
+
     parser.add_argument("--port", required=False, help="port to connect to")
     parser.add_argument("--max-connections", required=False, default=131, help="max connections to use")
     args = parser.parse_args()
@@ -254,8 +327,8 @@ if __name__ == "__main__":
         create_all_tables(conn, max_partitions)
         turn_autovacuum_off(conn, max_partitions)
         connection_pool.putconn(conn)
-
         start_threads(0, 1300225138, args.max_connections)
+
     elif args.attach_partitions:
         with ThreadPoolExecutor(max_workers=args.max_connections) as executor:
             futures = [executor.submit(process_partition, i) for i in range(args.max_connections)]
@@ -265,3 +338,6 @@ if __name__ == "__main__":
                     future.result()
                 except Exception as e:
                     print(f"Error during database update operation: {e}")
+
+    elif args.add_indexes:
+        add_indexes(args.max_connections, args.index_name, args.table_name, args.index_cols)

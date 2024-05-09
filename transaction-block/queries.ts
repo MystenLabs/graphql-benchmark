@@ -11,7 +11,7 @@ export const TransactionBlocksQuery = graphql(`
     $first: Int
     $last: Int
   ) {
-    transactionBlocks(
+    transactionBlocksCalls(
       filter: $filter
       first: $first
       after: $after

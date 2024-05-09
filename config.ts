@@ -28,7 +28,7 @@ export async function getSuiteConfiguration(suiteName: string): Promise<SuiteCon
         description: "TxBlocks suite description",
         queries,
         queryKey: "queryTransactionBlocks",
-        dataPath: "transactionBlocks.pageInfo",
+        dataPath: "transactionBlocksCalls.pageInfo",
         typeStringFields: ["function"],
         paramsFilePath: "./transaction-block/parameters.json",
       };
