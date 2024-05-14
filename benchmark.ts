@@ -21,7 +21,7 @@ export type PaginationParams = {
   before?: string;
 };
 
-export type ReportStatus = "COMPLETED" | "TIMED OUT" | "ERROR";
+export type ReportStatus = "COMPLETED" | "TIMED OUT" | "BOTH DATA AND ERRORS ARE UNDEFINED" | string;
 
 export class PaginationV2 {
   paginateForwards: boolean;

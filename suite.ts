@@ -10,7 +10,7 @@ import {
   GraphQLQueryOptions,
 } from "@mysten/sui.js/graphql";
 import { ASTNode, print } from "graphql";
-import { benchmark_connection_query, PageInfo } from "./benchmark";
+import { benchmark_connection_query, PageInfo, ReportStatus } from "./benchmark";
 import { Arguments } from "./cli";
 import { EnsureArraysOnly, generateCombinations } from "./parameterization";
 import { getSuiteConfiguration } from "./config";
@@ -25,6 +25,20 @@ export type Variables =
 export type Parameters<T> = {
   filter?: EnsureArraysOnly<T>;
 } & { [key: string]: any };
+
+interface BenchmarkResults {
+  description: string;
+  query: string;
+  params: Parameters<any>;
+  reports: Report[];
+}
+
+interface Report {
+  index: number;
+  status: ReportStatus;
+  variables: { [key: string]: any };
+  cursors: string[];
+}
 
 /**
  * This function runs a combination of filters emitted by `generateFilters` against a single graphQL
@@ -56,7 +70,21 @@ export async function runQuerySuite(
     "utf-8",
   );
 
-  const parameters = JSON.parse(jsonData) as Parameters<any>;
+  let combinations;
+  let parameters;
+
+  // data.reports[n].variables
+  if (!args.replay) {
+    parameters = JSON.parse(jsonData) as Parameters<any>;
+    combinations = generateCombinations(parameters, typeStringFields);
+  } else {
+    const data: BenchmarkResults = JSON.parse(jsonData);
+    parameters = data.params;
+    combinations = data.reports.map((report) => report.variables);
+  }
+
+
+
   const query = print(queries[queryKey] as ASTNode).replace(/\n/g, " ");
   const fileName = `${queryKey}-${inputJsonPathName}-${new Date().toISOString()}.json`;
   console.log(
@@ -81,7 +109,6 @@ export async function runQuerySuite(
     `{"description": "${description}",\n"query": "${query}",\n"params": ${JSON.stringify(parameters)},\n"reports": [`,
   );
 
-  let combinations = generateCombinations(parameters, typeStringFields);
   let totalRuns = combinations.length * 2;
 
   console.log("Total filter combinations to run: ", totalRuns);
@@ -131,25 +158,25 @@ export async function queryGeneric<
     ? V
     : Record<string, unknown>,
   dataPath: string, // e.g., 'objects.pageInfo'
-): Promise<{ pageInfo: PageInfo | string; variables: typeof variables }> {
+): Promise<{ pageInfo: PageInfo | ReportStatus; variables: typeof variables }> {
   const options: Omit<GraphQLQueryOptions<any, any>, "query"> = { variables };
 
   let response = await client.execute(queryName, options);
   let data = response.data;
 
   // Dynamically access the data using the dataPath with safety
-  let result = dataPath
+  let result: PageInfo | ReportStatus = dataPath
     .split(".")
     .reduce((acc: any, curr: string) => acc?.[curr], data);
 
   // if response.data and response.errors both undefined, then unexpected
   if (response.data === undefined && response.errors === undefined) {
-    result = "UNEXPECTED ERROR";
+    result = "BOTH DATA AND ERRORS ARE UNDEFINED";
   }
   if (response.errors !== undefined) {
     let errorMessage = response.errors![0].message;
-    if (errorMessage.includes("Request timed out") || errorMessage.includes("statement timeout")) {
-      result = "TIMEOUT";
+    if (errorMessage.includes("Request timed out") || errorMessage.includes("statement timeout") || errorMessage.includes("canceling statement due to conflict with recovery")) {
+      result = "TIMED OUT";
     } else {
       result = errorMessage;
     }
