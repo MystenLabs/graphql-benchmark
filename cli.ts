@@ -14,6 +14,7 @@ export interface Arguments {
   url: string;
   description: string | undefined;
   replay: boolean;
+  manual: boolean;
 }
 
 // Setup yargs
@@ -51,13 +52,18 @@ const argv = yargs(hideBin(process.argv))
   })
   .option("description", {
     describe: "The description of the suite",
-    type: "string"
+    type: "string",
   })
   .option("replay", {
-    describe: "Replay a benchmark's list of reports in lieu of running a new benchmark.",
+    describe:
+      "Replay a benchmark's list of reports in lieu of running a new benchmark.",
     type: "boolean",
-    default: false
-
+    default: false,
+  })
+  .option("manual", {
+    describe: "Provide a json file of manually crafted filters to benchmark.",
+    type: "boolean",
+    default: false,
   })
   .help("h")
   .alias("h", "help")

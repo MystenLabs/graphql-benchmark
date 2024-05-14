@@ -13,92 +13,94 @@ export const DFsByOwner = graphql(`
     $showContents: Boolean = false
   ) {
     owner(address: $address) {
-        dynamicFields(
-            first: $first
-            after: $after
-            last: $last
-            before: $before
-        ) {
-            pageInfo {
-                startCursor
-                endCursor
-                hasPreviousPage
-                hasNextPage
-            }
-            nodes @include(if: $showContents) {
-                name {
-                  type {
-                    repr
-                  }
-                }
-                value {
-                    ... on MoveValue {
-                        type {
-                            repr
-                        }
-                        json
-                    }
-                    ... on MoveObject {
-                        contents {
-                            json
-                            type {
-                                repr
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}`);
-
-export const DFsByObject = graphql(`
-query DFsByObject(
-  $first: Int
-  $after: String
-  $last: Int
-  $before: String
-  $address: String
-  $showContents: Boolean = false
-) {
-  object(address: $address) {
       dynamicFields(
-          first: $first
-          after: $after
-          last: $last
-          before: $before
+        first: $first
+        after: $after
+        last: $last
+        before: $before
       ) {
-          pageInfo {
-              startCursor
-              endCursor
-              hasPreviousPage
-              hasNextPage
+        pageInfo {
+          startCursor
+          endCursor
+          hasPreviousPage
+          hasNextPage
+        }
+        nodes @include(if: $showContents) {
+          name {
+            type {
+              repr
+            }
           }
-          nodes @include(if: $showContents) {
-              name {
+          value {
+            ... on MoveValue {
+              type {
+                repr
+              }
+              json
+            }
+            ... on MoveObject {
+              contents {
+                json
                 type {
                   repr
                 }
               }
-              value {
-                  ... on MoveValue {
-                      type {
-                          repr
-                      }
-                      json
-                  }
-                  ... on MoveObject {
-                      contents {
-                          json
-                          type {
-                              repr
-                          }
-                      }
-                  }
-              }
+            }
           }
+        }
       }
+    }
   }
-}`);
+`);
+
+export const DFsByObject = graphql(`
+  query DFsByObject(
+    $first: Int
+    $after: String
+    $last: Int
+    $before: String
+    $address: String
+    $showContents: Boolean = false
+  ) {
+    object(address: $address) {
+      dynamicFields(
+        first: $first
+        after: $after
+        last: $last
+        before: $before
+      ) {
+        pageInfo {
+          startCursor
+          endCursor
+          hasPreviousPage
+          hasNextPage
+        }
+        nodes @include(if: $showContents) {
+          name {
+            type {
+              repr
+            }
+          }
+          value {
+            ... on MoveValue {
+              type {
+                repr
+              }
+              json
+            }
+            ... on MoveObject {
+              contents {
+                json
+                type {
+                  repr
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`);
 
 export const queries = { dfsByOwner: DFsByOwner, dfsByObject: DFsByObject };

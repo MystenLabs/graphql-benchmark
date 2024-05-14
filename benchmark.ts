@@ -21,7 +21,11 @@ export type PaginationParams = {
   before?: string;
 };
 
-export type ReportStatus = "COMPLETED" | "TIMED OUT" | "BOTH DATA AND ERRORS ARE UNDEFINED" | string;
+export type ReportStatus =
+  | "COMPLETED"
+  | "TIMED OUT"
+  | "BOTH DATA AND ERRORS ARE UNDEFINED"
+  | string;
 
 export class PaginationV2 {
   paginateForwards: boolean;
@@ -92,7 +96,7 @@ export async function benchmark_connection_query(
       queryParams = variables;
     }
 
-    if (typeof result === 'string') {
+    if (typeof result === "string") {
       console.log(result);
       // allow up to 3 retries
       if (i == 2) {
@@ -118,7 +122,12 @@ export async function benchmark_connection_query(
     reportStatus = "COMPLETED";
   }
 
-  return report(reportStatus as ReportStatus, queryParams, cursors, metrics(durations));
+  return report(
+    reportStatus as ReportStatus,
+    queryParams,
+    cursors,
+    metrics(durations),
+  );
 }
 
 type Metrics = {
