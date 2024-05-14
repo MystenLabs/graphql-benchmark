@@ -15,7 +15,7 @@ Recommend setting `\pset pager off` in your psql session to show results of `exp
 
 To run the Python scripts that interact with postgres, you will need to install libpq and the psycopg2 library.
 
-To replay a benchmark suite, add `--replay` as a flag.
+To replay a benchmark suite, add `--replay` as a flag. To run a benchmark experiment from manually picked variables, pass `--manual` as a flag.
 
 # Defaults
 

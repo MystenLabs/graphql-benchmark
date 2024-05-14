@@ -118,6 +118,9 @@ export async function runQuerySuite(args: Arguments) {
     console.error(
       "If --replay is provided, ensure that the JSON file is the output file of a previous benchmark suite run.",
     );
+    console.error(
+      "If --manual is provided, ensure that the JSON file is an array of variables.",
+    );
     process.exit(1);
   }
 
