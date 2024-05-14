@@ -74,13 +74,19 @@ export async function runQuerySuite(
   let parameters;
 
   // data.reports[n].variables
-  if (!args.replay) {
-    parameters = JSON.parse(jsonData) as Parameters<any>;
-    combinations = generateCombinations(parameters, typeStringFields);
-  } else {
-    const data: BenchmarkResults = JSON.parse(jsonData);
-    parameters = data.params;
-    combinations = data.reports.map((report) => report.variables);
+  try {
+    if (!args.replay) {
+      parameters = JSON.parse(jsonData) as Parameters<any>;
+      combinations = generateCombinations(parameters, typeStringFields);
+    } else {
+      const data: BenchmarkResults = JSON.parse(jsonData);
+      parameters = data.params;
+      combinations = data.reports.map((report) => report.variables);
+    }
+  } catch (e) {
+    console.error("Failed to parse JSON file: ", e);
+    console.error("If --replay is provided, ensure that the JSON file is the output file of a previous benchmark suite run.")
+    process.exit(1);
   }
 
 

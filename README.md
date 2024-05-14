@@ -15,6 +15,8 @@ Recommend setting `\pset pager off` in your psql session to show results of `exp
 
 To run the Python scripts that interact with postgres, you will need to install libpq and the psycopg2 library.
 
+To replay a benchmark suite, add `--replay` as a flag.
+
 # Defaults
 
 - each query is run 10 times forwards, 10 times backwards. The first 3 runs of each set are considered warmup runs, and not included in `metrics` statistics.
