@@ -92,7 +92,6 @@ export async function benchmark_connection_query(
       queryParams = variables;
     }
 
-
     if (typeof result === 'string') {
       console.log(result);
       // allow up to 3 retries

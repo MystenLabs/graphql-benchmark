@@ -70,26 +70,33 @@ export async function runQuerySuite(
     "utf-8",
   );
 
-  let combinations;
+  let combinations: Array<[any, boolean]> = [];
   let parameters;
+  let totalRuns = 0;
 
-  // data.reports[n].variables
   try {
     if (!args.replay) {
       parameters = JSON.parse(jsonData) as Parameters<any>;
-      combinations = generateCombinations(parameters, typeStringFields);
+      const generatedCombinations = generateCombinations(parameters, typeStringFields);
+      const combinationsTrue = generatedCombinations.map((vars) => [vars, true] as [any, boolean]);
+      const combinationsFalse = generatedCombinations.map((vars) => [vars, false] as [any, boolean]);
+      combinations = [...combinationsTrue, ...combinationsFalse];
+      totalRuns = combinations.length;
     } else {
       const data: BenchmarkResults = JSON.parse(jsonData);
       parameters = data.params;
-      combinations = data.reports.map((report) => report.variables);
+      const reportCombinations = data.reports.map((report) => report.variables);
+      combinations = reportCombinations.map((vars) => {
+        const paginateForwards = vars.first !== undefined;
+        return [vars, paginateForwards];
+      });
+      totalRuns = combinations.length;
     }
   } catch (e) {
     console.error("Failed to parse JSON file: ", e);
     console.error("If --replay is provided, ensure that the JSON file is the output file of a previous benchmark suite run.")
     process.exit(1);
   }
-
-
 
   const query = print(queries[queryKey] as ASTNode).replace(/\n/g, " ");
   const fileName = `${queryKey}-${inputJsonPathName}-${new Date().toISOString()}.json`;
@@ -115,38 +122,35 @@ export async function runQuerySuite(
     `{"description": "${description}",\n"query": "${query}",\n"params": ${JSON.stringify(parameters)},\n"reports": [`,
   );
 
-  let totalRuns = combinations.length * 2;
-
   console.log("Total filter combinations to run: ", totalRuns);
 
   let i = -1;
-  for (let paginateForwards of [true, false]) {
-    for (let parameters of combinations) {
-      i++;
-      if (i <= index) {
-        continue;
-      }
+  for (let [parameters, paginateForwards] of combinations) {
+    i++;
+    if (i <= index) {
+      continue;
+    }
 
-      let report = await benchmark_connection_query(
-        { paginateForwards, limit, numPages },
-        async (paginationParams) => {
-          let newVariables: Variables = {
-            ...parameters,
-            ...paginationParams,
-          } as Variables;
+    let report = await benchmark_connection_query(
+      { paginateForwards, limit, numPages },
+      async (paginationParams) => {
+        let newVariables: Variables = {
+          ...parameters,
+          ...paginationParams,
+        } as Variables;
 
-          return await queryGeneric(client, queryKey, newVariables, dataPath);
-        },
-      );
-      console.log("Completed run ", i);
-      let indexed_report = { index: i, ...report };
-      stream.write(`${JSON.stringify(indexed_report, null, 2)}`);
+        return await queryGeneric(client, queryKey, newVariables, dataPath);
+      },
+    );
+    console.log("Completed run ", i);
+    let indexed_report = { index: i, ...report };
+    stream.write(`${JSON.stringify(indexed_report, null, 2)}`);
 
-      if (i < totalRuns - 1) {
-        stream.write(",");
-      }
+    if (i < totalRuns - 1) {
+      stream.write(",");
     }
   }
+
   stream.end("]}");
 }
 
