@@ -13,3 +13,9 @@
     :port     (or port     (env "DBPORT") "5432")
     :user     (or user     (env "DBUSER") "postgres")
     :password (or password (env "DBPASS") "postgrespw")}))
+
+(defn max-checkpoint
+  "Get the maximum checkpoint sequence number."
+  [db] (->> ["SELECT MAX(checkpoint_sequence_number) FROM objects_history"]
+            (jdbc/execute-one! db)
+            (:max)))
