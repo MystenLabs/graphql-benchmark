@@ -87,6 +87,7 @@ export async function runQuerySuite(args: Arguments) {
       totalRuns = combinations.length;
     } else if (args.manual) {
       // Load the JSON file for the manual case
+      parameters = "N/A";
       const data = JSON.parse(jsonData);
       if (!Array.isArray(data)) {
         throw new Error(
