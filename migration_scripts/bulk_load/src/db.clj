@@ -1,5 +1,6 @@
 (ns db
-  (:require [next.jdbc :as jdbc]))
+  (:require [next.jdbc :as jdbc])
+  (:import [org.postgresql.util PSQLException]))
 
 (defn- env [var] (System/getenv var))
 
@@ -19,3 +20,28 @@
   [db] (->> ["SELECT MAX(checkpoint_sequence_number) FROM objects_history"]
             (jdbc/execute-one! db)
             (:max)))
+
+(defmacro worker
+  "Create a worker function for a pool.
+
+  The worker is passed a description of the unit of work (expected to
+  be a map) which is bound to `param`, and then its `body` is
+  evaluated. The return value of `body` is merged with the description
+  of the work and sent back to the supervisor, along with a `:status`
+  of `:success`.
+
+  The returned worker detects timeouts and errors, returning the
+  description of work with a `:status` of `:timeout` or `:error`
+  respectively. Errors are additionally annotated with the `:error`
+  itself."
+  [param & body]
+  `(fn [param# reply#]
+     (try (->> (let [~param param#] ~@body)
+               (merge param# {:status :success})
+               (reply#))
+          (catch PSQLException e#
+            (if (= "57014" (.getSQLState e#))
+              (reply# (assoc param# :status :timeout))
+              (reply# (assoc param# :status :error :error e#))))
+          (catch Throwable t#
+            (reply# (assoc param# :status :error :error t#))))))
