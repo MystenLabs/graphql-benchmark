@@ -81,33 +81,6 @@ def timeout_analysis(df):
         detailed_filter_combinations = x[DETAILED_COMBINATIONS][x[STATUS] == TIMED_OUT].tolist()
 
         indexed_combinations = {}
-        """
-        Produces
-        "indexed_combinations": {
-            "first,function": {
-                "1": {
-                    "first": 50,
-                    "filter": {
-                        "function": "0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e"
-                    }
-                },
-                "3": {
-                    "first": 50,
-                    "filter": {
-                        "function": "0x000000000000000000000000000000000000000000000000000000000000dee9"
-                    }
-                }
-            },
-            "function,last": {
-                "12961": {
-                    "last": 50,
-                    "filter": {
-                        "function": "0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e"
-                    }
-                }
-            }
-        }
-        """
         for index, combination in zip(timeout_indexes, detailed_filter_combinations):
             temp = []
             for field, value in combination.items():
@@ -166,6 +139,13 @@ def main(filepath):
         return
 
     df = extract_filter_keys_and_status(summaries.reports)
+
+    # check if there are any "TIMED OUT", and return early if there aren't any
+    value_exists = (df[STATUS] == 1).any()
+
+    if not value_exists:
+        print("No timed out queries found in the data")
+        return
 
     calculate_coefs(df)
 
