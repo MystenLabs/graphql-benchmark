@@ -4,7 +4,7 @@
             [pool :refer [->Pool signal-swap!]]
             [next.jdbc :as jdbc]
             [clojure.core :as c]
-            [clojure.core.async :as async :refer [go]])
+            [clojure.core.async :as async])
   (:import [org.postgresql.util PSQLException]))
 
 (def +objects-version+ "objects_version")
@@ -87,12 +87,6 @@
   [db name timeout]
   (as-> [(format "VACUUM ANALYZE %s" name)]
       % (jdbc/execute! db % {:timeout timeout})))
-
-(defn max-checkpoint
-  "Get the maximum checkpoint sequence number."
-  [db] (->> ["SELECT MAX(checkpoint_sequence_number) FROM objects_history"]
-            (jdbc/execute-one! db)
-            (:max)))
 
 (defn objects-version:populate!
   "Populate a specific partition table with object versions from the
@@ -206,10 +200,10 @@
   Returns a `kill` channel and a `join` channel for interacting with
   the job as it is in progress."
   [db logger timeout signals]
-  (let [max-cp (inc (max-checkpoint db)) batch  1000000]
+  (let [max-cp (inc (db/max-checkpoint db)) batch 100000]
     (->Pool :name "bulk-load"
             :logger logger
-            :workers 20
+            :workers 50
 
             :pending
             (for [lo (range 0 max-cp batch)
