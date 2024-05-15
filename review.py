@@ -30,7 +30,7 @@ class Report(BaseModel):
 class ReportSummaries(BaseModel):
     description: str
     query: str
-    # params: Dict[str, Any]
+    params: Dict[str, Any]
     reports: List[Report]
 
 

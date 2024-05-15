@@ -1,3 +1,5 @@
 node_modules
 .eslintrc.js
 *.json
+*python3*
+*migration_scripts/tx*

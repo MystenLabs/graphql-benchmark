@@ -3,7 +3,6 @@
 
 import { GraphQLDocument } from "@mysten/graphql-transport";
 
-
 export type Queries = Record<string, GraphQLDocument>;
 export type Query = Extract<keyof Queries, string>;
 
@@ -16,11 +15,12 @@ export type SuiteConfig = {
   paramsFilePath: string;
 };
 
-
 /**
  * Maps suites to default configurations, to be overriden by the user.
  */
-export async function getSuiteConfiguration(suiteName: string): Promise<SuiteConfig> {
+export async function getSuiteConfiguration(
+  suiteName: string,
+): Promise<SuiteConfig> {
   switch (suiteName) {
     case "transaction-block": {
       let { queries } = await import("./transaction-block/queries");
@@ -60,7 +60,8 @@ export async function getSuiteConfiguration(suiteName: string): Promise<SuiteCon
     case "coinsByType":
     case "coinsByOwner": {
       let { queries } = await import("./coin/queries");
-      let dataPath = suiteName === "coinsByType" ? "coins.pageInfo" : "owner.coins.pageInfo";
+      let dataPath =
+        suiteName === "coinsByType" ? "coins.pageInfo" : "owner.coins.pageInfo";
 
       return {
         description: "Coins suite description",
@@ -72,11 +73,16 @@ export async function getSuiteConfiguration(suiteName: string): Promise<SuiteCon
       };
     }
     case "dfsByOwner":
-    case "dfsByObject":
-    {
+    case "dfsByObject": {
       let { queries } = await import("./dynamic-field/queries");
-      let dataPath = suiteName === "dfsByOwner" ? "owner.dynamicFields.pageInfo" : "object.dynamicFields.pageInfo";
-      let paramsFilePath = suiteName === "dfsByOwner" ? "./dynamic-field/parameters-owner.json" : "./dynamic-field/parameters-object.json";
+      let dataPath =
+        suiteName === "dfsByOwner"
+          ? "owner.dynamicFields.pageInfo"
+          : "object.dynamicFields.pageInfo";
+      let paramsFilePath =
+        suiteName === "dfsByOwner"
+          ? "./dynamic-field/parameters-owner.json"
+          : "./dynamic-field/parameters-object.json";
       return {
         description: "Dynamic Fields suite description",
         queries,

@@ -15,6 +15,13 @@ Recommend setting `\pset pager off` in your psql session to show results of `exp
 
 To run the Python scripts that interact with postgres, you will need to install libpq and the psycopg2 library.
 
+To replay a benchmark suite, add `--replay` as a flag. To run a benchmark experiment from manually picked variables, pass `--manual` as a flag.
+```
+pnpm ts-node cli.ts --suite transaction-block --params-file-path experiments/queryTransactionBlocks-manual-2024-05-14T19:21:26.278Z.json --url https://sui-mainnet.mystenlabs.com/ --limit 10 --replay
+
+pnpm ts-node cli.ts --suite transaction-block --params-file-path manual.json --url https://sui-mainnet.mystenlabs.com/ --limit 10 --manual
+```
+
 # Defaults
 
 - each query is run 10 times forwards, 10 times backwards. The first 3 runs of each set are considered warmup runs, and not included in `metrics` statistics.

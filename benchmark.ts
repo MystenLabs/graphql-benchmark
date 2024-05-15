@@ -21,6 +21,12 @@ export type PaginationParams = {
   before?: string;
 };
 
+export type ReportStatus =
+  | "COMPLETED"
+  | "TIMED OUT"
+  | "BOTH DATA AND ERRORS ARE UNDEFINED"
+  | string;
+
 export class PaginationV2 {
   paginateForwards: boolean;
   limit: number;
@@ -68,7 +74,7 @@ export async function benchmark_connection_query(
   benchmarkParams: BenchmarkParams,
   testFn: (
     cursor: PaginationParams,
-  ) => Promise<{ pageInfo: PageInfo | string; variables: any }>,
+  ) => Promise<{ pageInfo: PageInfo | ReportStatus; variables: any }>,
 ): Promise<Report> {
   let { paginateForwards, limit, numPages } = benchmarkParams;
 
@@ -79,6 +85,8 @@ export async function benchmark_connection_query(
   let pagination = new PaginationV2(paginateForwards, limit);
   let queryParams;
 
+  let reportStatus: string | undefined = undefined;
+
   for (let i = 0; i < numPages && hasNextPage; i++) {
     let start = performance.now();
     let { pageInfo: result, variables } = await testFn(pagination.getParams());
@@ -88,10 +96,11 @@ export async function benchmark_connection_query(
       queryParams = variables;
     }
 
-    if (typeof result === 'string') {
+    if (typeof result === "string") {
       console.log(result);
       // allow up to 3 retries
       if (i == 2) {
+        reportStatus = result;
         break;
       }
       continue;
@@ -109,7 +118,16 @@ export async function benchmark_connection_query(
   // sleep for 1 second
   await new Promise((r) => setTimeout(r, 1000));
 
-  return report(queryParams, cursors, metrics(durations));
+  if (reportStatus === undefined) {
+    reportStatus = "COMPLETED";
+  }
+
+  return report(
+    reportStatus as ReportStatus,
+    queryParams,
+    cursors,
+    metrics(durations),
+  );
 }
 
 type Metrics = {
@@ -145,11 +163,12 @@ export function metrics(durations: number[]): Metrics {
 type Report = {
   variables: any;
   cursors: string[];
-  status: "COMPLETED" | "TIMED OUT" | "ERROR";
+  status: ReportStatus;
   metrics?: Metrics;
 };
 
 export function report<T>(
+  reportStatus: ReportStatus,
   variables: T,
   cursors: string[],
   metrics: Metrics,
@@ -161,11 +180,11 @@ export function report<T>(
     cursors,
   };
 
-  if (!(metrics.durations.length > 3)) {
-    reportObject.status = "TIMED OUT";
-  } else {
+  if (reportStatus === "COMPLETED") {
     reportObject.metrics = metrics;
   }
+
+  reportObject.status = reportStatus;
 
   return reportObject;
 }
