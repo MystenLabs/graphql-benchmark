@@ -92,6 +92,17 @@ export async function getSuiteConfiguration(
         paramsFilePath,
       };
     }
+    case "addressBalances": {
+      let { queries } = await import("./balance/queries");
+      return {
+        description: "Address Balances suite description",
+        queries,
+        queryKey: "addressBalances",
+        dataPath: "address.balances.pageInfo",
+        typeStringFields: [],
+        paramsFilePath: "./balance/parameters.json",
+      };
+    }
     default:
       throw new Error(`Unknown suite: ${suiteName}`);
   }
