@@ -1,0 +1,499 @@
+{"description": "Address Balances suite description",
+"query": "query queryAddressBalances($address: SuiAddress!, $first: Int, $after: String, $last: Int, $before: String) {   address(address: $address) {     balances(first: $first, after: $after, last: $last, before: $before) {       pageInfo {         startCursor         endCursor         hasPreviousPage         hasNextPage       }       nodes {         coinType {           repr         }         coinObjectCount         totalBalance       }     }   } }",
+"params": {"address":["0x0","0xefa434f1441f5d61bfb5f3d9a26e494e8fcaef87a69cd9ce639d6b648cc8a512","0x7f4421fcb8a4d1161480eebc4b017c0367f0449d733d686998144854638db05a","0xbc5c87d4fdc3ca3b9ac4da7c995e6f66cef0ad5cf79fec47bc6620ab13cfade0","0x341fa71e4e58d63668034125c3152f935b00b0bb5c68069045d8c646d017fae1","0x0ba6f69b75b4651457b37d2d3d9c7d93997ec420427814ee3e3851c17ced74c0","0x1fb0c0a6790860fc83c8f26f6fa089868ad94de9468348f98dfb4cdf89a53777","0xc9182656feffdd873fcac97b4dfc5fa515fbf51342369fc4fe6ab5d0de747835","0x39b9e5942df9a4686ebe727534077281d6adcee15a9bb74d3e052e56d78b2744","0x55b0eb986766351d802ac3e1bbb8750a072b3fa40c782ebe3a0f48c9099f7fd3","0x8a0fac6e8b1ddbec8b61f2a55a1025c94a60f5dadda8e0990eed4029f52bea39"]},
+"reports": [{
+  "index": 0,
+  "status": "COMPLETED",
+  "variables": {
+    "address": "0x0",
+    "first": 50
+  },
+  "cursors": [
+    "eyJ0IjoiMHgxZDk2MzYxNGUxNTQ5MTA3NmI2YmZmNmE2ZWU5ZWY3NDJmYTQ1M2E0ZTc1OWQ3M2JjY2Y1MzRmZDVjYTc4NGI4Ojpub29iOjpOT09CIiwiYyI6MzM3MzM2NzJ9",
+    "eyJ0IjoiMHgyMjdmODY1MjMwZGQ0ZmM5NDczMjE2MTlmNTZmZWUzN2RjN2FjNTgyZWIyMmUzZWFiMjk4MTZmNzE3NTEyZDlkOjpsaXF1aWRpdHlfcG9vbDo6TFBUb2tlbjwweGJmZjhkYzYwZDNmNzE0ZjY3OGNkNDQ5MGZmMDhjYWJiZWE5NWQzMDhjNmRlNDdhMTUwYzc5Y2M4NzVlMGM3YzY6OnNib3g6OlNCT1gsMHhmMGZlMjIxMGI0ZjBjNGUzYWZmN2VkMTQ3ZjE0OTgwY2YxNGYxMTE0YzZhZDhmZDUzMWFiNzQ4Y2NmMzMzNzNiOjpic3d0OjpCU1dULDB4MjI3Zjg2NTIzMGRkNGZjOTQ3MzIxNjE5ZjU2ZmVlMzdkYzdhYzU4MmViMjJlM2VhYjI5ODE2ZjcxNzUxMmQ5ZDo6Y3VydmVzOjpTdGFibGU-IiwiYyI6MzM3MzM2NzJ9",
+    "eyJ0IjoiMHgzNzI1NWVkNTI2ZDJmMmVkNzAyMDEzMjdiMzE2ZmExZWJkMzQzMzMwMDlkZDk2NWVlNjljZDNlZWZiNTk3MDIzOjpzdWliYTo6U1VJQkEiLCJjIjozMzczMzY3Mn0",
+    "eyJ0IjoiMHg0NzY1N2FlYzU3M2I4MWQxZGMzOGIxNTkyZWFjNmI5ZWVmMjVkZmZlNmNjYzRmOGIyODRiMDVmYWE0OWI1ZDQ5OjptdmM6Ok1WQyIsImMiOjMzNzMzNjcyfQ",
+    "eyJ0IjoiMHg1YzQ1ZDEwYzI2YzVmYjUzYmZhZmY4MTk2NjZkYTZiYzcwNTNkMjE5MGRmYTI5ZmVjMzExY2M2NjZmZjFmNGIwOjpjb3JlOjpMUENvaW48MHg1YzQ1ZDEwYzI2YzVmYjUzYmZhZmY4MTk2NjZkYTZiYzcwNTNkMjE5MGRmYTI5ZmVjMzExY2M2NjZmZjFmNGIwOjpjdXJ2ZTo6Vm9sYXRpbGUsMHgwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAyOjpzdWk6OlNVSSwweDQ2NzQxYTM1OTIwYzJjMzQxMTcwMTFiYjBlOGU2MzQxZDhjNDQyNzIyMGFkODk0OTQ3NWQ0ZjQxMjE4NTU4Y2U6OnN1aWJvYmE6OlNVSUJPQkE-IiwiYyI6MzM3MzM2NzJ9",
+    "eyJ0IjoiMHg1ZmRiZjk4ZWNmODY4YzQwZmNmNjY1NzM4MTBjYjZlODdkOTRkN2E2NDZiYzhlMzFlOTE3ODY5ZjMzOGE1OTgwOjp4eXo6OlhZWiIsImMiOjMzNzMzNjcyfQ",
+    "eyJ0IjoiMHg3MjBiODExMGE1MjkzY2ZlNThkODkzMDYwOTFlYWRmYzc3ZTZmYTVmMzJmZmQ5ODVjZWFlOTc5Zjg5MzMzZjhhOjpzc2w6OlNTTCIsImMiOjMzNzMzNjcyfQ",
+    "eyJ0IjoiMHg4ODY0YjY0NjlkOGJkNTA3MmQ5YTI4YmVlZmNjZTJiZmRmMTdmNGY4MDNiOGQyNDA0NjQ0NjEwZjE1ZDk3ZmIyOjpneWE6OkdZQSIsImMiOjMzNzMzNjcyfQ"
+  ],
+  "metrics": {
+    "min": 233.18837500000154,
+    "p50": 249.77108399999997,
+    "p90": 317.09983400000056,
+    "p95": 317.09983400000056,
+    "mean": 262.74812542857137,
+    "max": 317.09983400000056,
+    "durations": [
+      15043.451167000001,
+      11550.025542,
+      243.68966600000203,
+      245.33920899999794,
+      317.09983400000056,
+      266.61958400000003,
+      290.6140000000014,
+      249.77108399999997,
+      236.60479199999827,
+      233.18837500000154
+    ]
+  }
+},{
+  "index": 1,
+  "status": "COMPLETED",
+  "variables": {
+    "address": "0xefa434f1441f5d61bfb5f3d9a26e494e8fcaef87a69cd9ce639d6b648cc8a512",
+    "first": 50
+  },
+  "cursors": [],
+  "metrics": {
+    "min": 131.56533300000228,
+    "p50": 136.90999999999985,
+    "p90": 161.8569580000003,
+    "p95": 161.8569580000003,
+    "mean": 141.1458631428577,
+    "max": 161.8569580000003,
+    "durations": [
+      141.6292089999988,
+      128.83666699999958,
+      150.04483299999993,
+      151.91316700000243,
+      136.90999999999985,
+      138.539084,
+      133.56424999999945,
+      161.8569580000003,
+      133.67224999999962,
+      131.56533300000228
+    ]
+  }
+},{
+  "index": 2,
+  "status": "COMPLETED",
+  "variables": {
+    "address": "0x7f4421fcb8a4d1161480eebc4b017c0367f0449d733d686998144854638db05a",
+    "first": 50
+  },
+  "cursors": [],
+  "metrics": {
+    "min": 127.77075000000332,
+    "p50": 130.22074999999313,
+    "p90": 179.29691699999967,
+    "p95": 179.29691699999967,
+    "mean": 138.30549414285633,
+    "max": 179.29691699999967,
+    "durations": [
+      158.02183399999922,
+      161.0951669999995,
+      160.76895800000057,
+      127.77075000000332,
+      130.22074999999313,
+      128.1195000000007,
+      179.29691699999967,
+      128.05979200000002,
+      141.1048329999976,
+      133.5659169999999
+    ]
+  }
+},{
+  "index": 3,
+  "status": "COMPLETED",
+  "variables": {
+    "address": "0xbc5c87d4fdc3ca3b9ac4da7c995e6f66cef0ad5cf79fec47bc6620ab13cfade0",
+    "first": 50
+  },
+  "cursors": [],
+  "metrics": {
+    "min": 133.85250000000087,
+    "p50": 158.89125000000058,
+    "p90": 198.330458000004,
+    "p95": 198.330458000004,
+    "mean": 162.5353808571443,
+    "max": 198.330458000004,
+    "durations": [
+      164.63558300000295,
+      181.80883399999584,
+      138.62575000000652,
+      168.27799999999843,
+      133.85250000000087,
+      198.330458000004,
+      158.89125000000058,
+      149.1232500000042,
+      134.4811669999981,
+      194.79104100000404
+    ]
+  }
+},{
+  "index": 4,
+  "status": "COMPLETED",
+  "variables": {
+    "address": "0x341fa71e4e58d63668034125c3152f935b00b0bb5c68069045d8c646d017fae1",
+    "first": 50
+  },
+  "cursors": [],
+  "metrics": {
+    "min": 135.05633300000045,
+    "p50": 150.7490839999955,
+    "p90": 187.49837499999558,
+    "p95": 187.49837499999558,
+    "mean": 154.82791085714103,
+    "max": 187.49837499999558,
+    "durations": [
+      200.14549999999872,
+      137.109375,
+      138.5557090000002,
+      137.93320799999492,
+      187.49837499999558,
+      150.7490839999955,
+      135.05633300000045,
+      142.49637500000244,
+      178.55033399999957,
+      151.51166699999885
+    ]
+  }
+},{
+  "index": 5,
+  "status": "COMPLETED",
+  "variables": {
+    "address": "0x0ba6f69b75b4651457b37d2d3d9c7d93997ec420427814ee3e3851c17ced74c0",
+    "first": 50
+  },
+  "cursors": [],
+  "metrics": {
+    "min": 135.55262499999662,
+    "p50": 160.3585419999945,
+    "p90": 181.54987499999697,
+    "p95": 181.54987499999697,
+    "mean": 157.37689885714124,
+    "max": 181.54987499999697,
+    "durations": [
+      153.3699160000033,
+      139.36529200000223,
+      156.2831670000014,
+      181.54987499999697,
+      135.55262499999662,
+      145.9800000000032,
+      166.9444999999978,
+      169.17504100000224,
+      160.3585419999945,
+      142.0777089999974
+    ]
+  }
+},{
+  "index": 6,
+  "status": "COMPLETED",
+  "variables": {
+    "address": "0x39b9e5942df9a4686ebe727534077281d6adcee15a9bb74d3e052e56d78b2744",
+    "first": 50
+  },
+  "cursors": [],
+  "metrics": {
+    "min": 519.7529170000053,
+    "p50": 536.3394170000101,
+    "p90": 609.5096659999981,
+    "p95": 609.5096659999981,
+    "mean": 561.0451842857167,
+    "max": 609.5096659999981,
+    "durations": [
+      12847.784832999983,
+      602.2637080000131,
+      584.163790999999,
+      533.7397079999791,
+      536.3394170000101,
+      608.0078330000106,
+      519.7529170000053,
+      595.9492909999972,
+      609.5096659999981,
+      524.0174580000166
+    ]
+  }
+},{
+  "index": 7,
+  "status": "COMPLETED",
+  "variables": {
+    "address": "0x8a0fac6e8b1ddbec8b61f2a55a1025c94a60f5dadda8e0990eed4029f52bea39",
+    "first": 50
+  },
+  "cursors": [],
+  "metrics": {
+    "min": 378.3409999999858,
+    "p50": 402.30595800001174,
+    "p90": 427.44841599999927,
+    "p95": 427.44841599999927,
+    "mean": 405.50397614285714,
+    "max": 427.44841599999927,
+    "durations": [
+      15027.351292000007,
+      15013.434875000006,
+      3899.2590839999903,
+      402.30595800001174,
+      420.3189169999969,
+      393.9567500000121,
+      394.45933399998466,
+      427.44841599999927,
+      421.69745800000965,
+      378.3409999999858
+    ]
+  }
+},{
+  "index": 8,
+  "status": "COMPLETED",
+  "variables": {
+    "address": "0x0",
+    "last": 50
+  },
+  "cursors": [
+    "eyJ0IjoiMHhlYmIyYzQyNjQ1Y2U3YWZmMjQxM2E4Nzk0ZTQ4MGU3N2ZkNDRhZjMxZTNkMjkyNWVjN2ZhODAzNjE4ZDhhZDAwOjpob25leXN1aTo6SE9ORVlTVUkiLCJjIjozMzczMzY3Mn0",
+    "eyJ0IjoiMHhjZjNiZGI5NzBmMzlkZTNiMjVhNGU4NmY2NzZlMWRlYzNhNmI2MGY1ZjFkYTNkMGQ3ZWQ2Y2IzMzk1MTU1ZGY2OjpiZG9jOjpCRE9DIiwiYyI6MzM3MzM2NzJ9",
+    "eyJ0IjoiMHhiYTE1MzE2OTQ3NmU4YzMxMTQ5NjIyNjFkMWVkYzcwZGU1YWQ5NzgxYjgzY2M2MTdlY2M4YzE5MjMxOTFjYWUwOjpwYWlyOjpMUDwweGUzZDAyZmRhZTRhYzllYzE4YjQ4NzQxODMwNzZkNzkxZjgzZjU0NjI3NTM2MTBmMjc2ZjU1NWQ0NWQ1N2RiOTg6OmdsZDo6R0xELDB4ZWQzZWZmM2VhOWVjZmQ2NTI5YWEyOTVkODFmZjQzMjE0OGM4NmU0MDdiMjBhOWFhMmE1NmEyNmQ1OTcxZWFkNzo6d3N1aTo6V1NVST4iLCJjIjozMzczMzY3Mn0",
+    "eyJ0IjoiMHhiYTE1MzE2OTQ3NmU4YzMxMTQ5NjIyNjFkMWVkYzcwZGU1YWQ5NzgxYjgzY2M2MTdlY2M4YzE5MjMxOTFjYWUwOjpwYWlyOjpMUDwweDc2Y2I4MTliMDFhYmVkNTAyYmVlOGE3MDJiNGMyZDU0NzUzMmMxMmYyNTAwMWM5ZGVhNzk1YTVlNjMxYzI2ZjE6OmZ1ZDo6RlVELDB4ZGUyZDNlMDJiYTYwYjgwNmY4MWVlOTIyMGJlMmEzNDkzMmE1MTNmZThkN2Y1NTMxNjc2NDllOTVkZTIxYzA2Njo6cmVhcF90b2tlbjo6UkVBUF9UT0tFTj4iLCJjIjozMzczMzY3Mn0",
+    "eyJ0IjoiMHhiYTE1MzE2OTQ3NmU4YzMxMTQ5NjIyNjFkMWVkYzcwZGU1YWQ5NzgxYjgzY2M2MTdlY2M4YzE5MjMxOTFjYWUwOjpwYWlyOjpMUDwweDVkNGIzMDI1MDY2NDVjMzdmZjEzM2I5OGM0YjUwYTVhZTE0ODQxNjU5NzM4ZDZkNzMzZDU5ZDBkMjE3YTkzYmY6OmNvaW46OkNPSU4sMHg2NWVkNmQ0ZTY2NmZjYmMxYWZjZDlkNGIxZDZkNGFmN2RlZjNlZWVlYWE2NjNmNWJlYmFlODEwMTExMjI5MGY2Ojp4Zmx4OjpYRkxYPiIsImMiOjMzNzMzNjcyfQ",
+    "eyJ0IjoiMHhiYTE1MzE2OTQ3NmU4YzMxMTQ5NjIyNjFkMWVkYzcwZGU1YWQ5NzgxYjgzY2M2MTdlY2M4YzE5MjMxOTFjYWUwOjpwYWlyOjpMUDwweDRmYmQ3YTExM2E3OTRlNGVjYzE4ODczMmU1MTdlYjhkZWYzZThkZDM4ODQzMzBhNDRiNTFkYTJlMDIxZDQ0YzI6OmNvaW46OkNPSU4sMHg1YjIxOWQzYzJkMDI3NjZiNTdiYzI0ZGU1ZjI0NjhkOWM5OTM4MzA1ZDE5MDkzMzE3NzBmNWFiMDM2YWIzMTFiOjpzdWlhaTo6U1VJQUk-IiwiYyI6MzM3MzM2NzJ9",
+    "eyJ0IjoiMHhiYTE1MzE2OTQ3NmU4YzMxMTQ5NjIyNjFkMWVkYzcwZGU1YWQ5NzgxYjgzY2M2MTdlY2M4YzE5MjMxOTFjYWUwOjpwYWlyOjpMUDwweDQ1NzFmOGYwNzFiOTMzMDdhYjJkZjc2NDE4ZDc0MWRiZTkzOTNjZTI4ZjkzNTY4MzcyZjkwZmE1ZWFjNzg2NTg6OnNjYTo6U0NBLDB4NDZiYTI4MmNkMDQ3ZmU1MTc5ZGU4M2Y2MDNlYjc5ZGUxNjU0YzMxYjExOTU4NTU2MTNhOTE2OGVmMGJkMzg0ZTo6Y29pbjo6Q09JTj4iLCJjIjozMzczMzY3Mn0",
+    "eyJ0IjoiMHhiYTE1MzE2OTQ3NmU4YzMxMTQ5NjIyNjFkMWVkYzcwZGU1YWQ5NzgxYjgzY2M2MTdlY2M4YzE5MjMxOTFjYWUwOjpwYWlyOjpMUDwweDEwMzY1YTcwODFmMTVkYTBmODc1YTFmZDc5N2JjYWIxZDVmZWVlMzU0OGJmNWQwNGNmMGU3YWQ4NjQ5NjZmOWQ6OnRyeDo6VFJYLDB4YmZmOGRjNjBkM2Y3MTRmNjc4Y2Q0NDkwZmYwOGNhYmJlYTk1ZDMwOGM2ZGU0N2ExNTBjNzljYzg3NWUwYzdjNjo6c2JveDo6U0JPWD4iLCJjIjozMzczMzY3Mn0",
+    "eyJ0IjoiMHhiYTE1MzE2OTQ3NmU4YzMxMTQ5NjIyNjFkMWVkYzcwZGU1YWQ5NzgxYjgzY2M2MTdlY2M4YzE5MjMxOTFjYWUwOjpwYWlyOjpMUDwweDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDI6OnN1aTo6U1VJLDB4ZGUyZDNlMDJiYTYwYjgwNmY4MWVlOTIyMGJlMmEzNDkzMmE1MTNmZThkN2Y1NTMxNjc2NDllOTVkZTIxYzA2Njo6cmVhcF90b2tlbjo6UkVBUF9UT0tFTj4iLCJjIjozMzczMzY3Mn0"
+  ],
+  "metrics": {
+    "min": 311.1056669999962,
+    "p50": 319.30562499997905,
+    "p90": 355.25587500000256,
+    "p95": 355.25587500000256,
+    "mean": 327.5216252857104,
+    "max": 355.25587500000256,
+    "durations": [
+      371.15908400001354,
+      308.56370899998,
+      312.0618329999852,
+      317.4374169999792,
+      311.1056669999962,
+      316.7589169999992,
+      341.7322920000006,
+      331.0555840000161,
+      319.30562499997905,
+      355.25587500000256
+    ]
+  }
+},{
+  "index": 9,
+  "status": "COMPLETED",
+  "variables": {
+    "address": "0xefa434f1441f5d61bfb5f3d9a26e494e8fcaef87a69cd9ce639d6b648cc8a512",
+    "last": 50
+  },
+  "cursors": [],
+  "metrics": {
+    "min": 134.23862499999814,
+    "p50": 146.78270799998427,
+    "p90": 173.6100419999857,
+    "p95": 173.6100419999857,
+    "mean": 151.9824524285671,
+    "max": 173.6100419999857,
+    "durations": [
+      169.5370829999738,
+      161.7259999999951,
+      160.77650000000722,
+      169.58679200001643,
+      146.63612499999,
+      148.62266699998872,
+      173.6100419999857,
+      134.23862499999814,
+      146.78270799998427,
+      144.4002080000064
+    ]
+  }
+},{
+  "index": 10,
+  "status": "COMPLETED",
+  "variables": {
+    "address": "0x7f4421fcb8a4d1161480eebc4b017c0367f0449d733d686998144854638db05a",
+    "last": 50
+  },
+  "cursors": [],
+  "metrics": {
+    "min": 137.4095420000085,
+    "p50": 147.00012499999139,
+    "p90": 180.40924999999697,
+    "p95": 180.40924999999697,
+    "mean": 156.91096414285963,
+    "max": 180.40924999999697,
+    "durations": [
+      152.3237080000108,
+      178.23399999999674,
+      164.2266669999808,
+      147.00012499999139,
+      162.8833750000049,
+      179.16695800001617,
+      146.53941599998507,
+      137.4095420000085,
+      144.9680830000143,
+      180.40924999999697
+    ]
+  }
+},{
+  "index": 11,
+  "status": "COMPLETED",
+  "variables": {
+    "address": "0xbc5c87d4fdc3ca3b9ac4da7c995e6f66cef0ad5cf79fec47bc6620ab13cfade0",
+    "last": 50
+  },
+  "cursors": [],
+  "metrics": {
+    "min": 140.32849999997416,
+    "p50": 171.82216700000572,
+    "p90": 196.96762499999022,
+    "p95": 196.96762499999022,
+    "mean": 167.64572014285037,
+    "max": 196.96762499999022,
+    "durations": [
+      194.6329170000099,
+      146.34158300000126,
+      141.52583299999242,
+      156.63000000000466,
+      196.96762499999022,
+      173.39708299998892,
+      140.32849999997416,
+      143.61395800000173,
+      190.76070799998706,
+      171.82216700000572
+    ]
+  }
+},{
+  "index": 12,
+  "status": "COMPLETED",
+  "variables": {
+    "address": "0x341fa71e4e58d63668034125c3152f935b00b0bb5c68069045d8c646d017fae1",
+    "last": 50
+  },
+  "cursors": [],
+  "metrics": {
+    "min": 135.48687500000233,
+    "p50": 149.67874999999185,
+    "p90": 184.83404200000223,
+    "p95": 184.83404200000223,
+    "mean": 156.64683928571426,
+    "max": 184.83404200000223,
+    "durations": [
+      148.3143750000163,
+      140.70287499998813,
+      166.33354200000758,
+      184.83404200000223,
+      149.67874999999185,
+      144.0932080000057,
+      177.2673749999958,
+      167.1352500000212,
+      138.03237499998068,
+      135.48687500000233
+    ]
+  }
+},{
+  "index": 13,
+  "status": "COMPLETED",
+  "variables": {
+    "address": "0x0ba6f69b75b4651457b37d2d3d9c7d93997ec420427814ee3e3851c17ced74c0",
+    "last": 50
+  },
+  "cursors": [],
+  "metrics": {
+    "min": 139.85224999999627,
+    "p50": 153.30045899999095,
+    "p90": 185.6492080000171,
+    "p95": 185.6492080000171,
+    "mean": 159.53462500000023,
+    "max": 185.6492080000171,
+    "durations": [
+      164.0724169999885,
+      170.82720900001004,
+      155.07995899999514,
+      153.30045899999095,
+      153.06849999999395,
+      185.6492080000171,
+      139.85224999999627,
+      157.29458300000988,
+      144.2994999999937,
+      183.27787499999977
+    ]
+  }
+},{
+  "index": 14,
+  "status": "COMPLETED",
+  "variables": {
+    "address": "0x39b9e5942df9a4686ebe727534077281d6adcee15a9bb74d3e052e56d78b2744",
+    "last": 50
+  },
+  "cursors": [],
+  "metrics": {
+    "min": 534.8108750000247,
+    "p50": 545.2276249999995,
+    "p90": 563.6620419999817,
+    "p95": 563.6620419999817,
+    "mean": 547.1785834285796,
+    "max": 563.6620419999817,
+    "durations": [
+      550.4726250000531,
+      534.5743340000045,
+      545.4209160000319,
+      563.6620419999817,
+      545.2276249999995,
+      534.8108750000247,
+      543.3399999999674,
+      540.7686250000261,
+      554.428750000021,
+      548.0121670000372
+    ]
+  }
+},{
+  "index": 15,
+  "status": "COMPLETED",
+  "variables": {
+    "address": "0x55b0eb986766351d802ac3e1bbb8750a072b3fa40c782ebe3a0f48c9099f7fd3",
+    "last": 50
+  },
+  "cursors": [],
+  "metrics": {
+    "min": 608.625875000027,
+    "p50": 624.0131249999977,
+    "p90": 644.6022080000257,
+    "p95": 644.6022080000257,
+    "mean": 622.587297428574,
+    "max": 644.6022080000257,
+    "durations": [
+      15010.488292000024,
+      5985.543208000017,
+      612.0459159999737,
+      620.3027920000022,
+      644.6022080000257,
+      609.3251659999951,
+      626.8375829999568,
+      608.625875000027,
+      624.0131249999977,
+      624.4043330000131
+    ]
+  }
+},{
+  "index": 16,
+  "status": "COMPLETED",
+  "variables": {
+    "address": "0x8a0fac6e8b1ddbec8b61f2a55a1025c94a60f5dadda8e0990eed4029f52bea39",
+    "last": 50
+  },
+  "cursors": [],
+  "metrics": {
+    "min": 374.95804200001294,
+    "p50": 395.889291999978,
+    "p90": 519.8543330000248,
+    "p95": 519.8543330000248,
+    "mean": 432.12273242857606,
+    "max": 519.8543330000248,
+    "durations": [
+      407.2552499999874,
+      409.13783399999375,
+      502.5093340000021,
+      519.8543330000248,
+      507.967209000024,
+      374.95804200001294,
+      379.95404199999757,
+      463.00941699999385,
+      383.2267920000013,
+      395.889291999978
+    ]
+  }
+}]}
