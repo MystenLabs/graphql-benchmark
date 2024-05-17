@@ -65,3 +65,7 @@ pnpm ts-node cli.ts --suite transaction-block --params-file-path manual.json --u
 - `runnable_query.py` - converts the `debug_query` display printed by graphql for each query into something you can copy and paste into psql
 - `utils.py` convert base58 to hex - useful for converting `transaction_digest` to something that can be run against `transactions` table
 - `review.py` to merge multiple runs, select combinations that timed out, repro arbitrary runs
+
+# Performance Parity Checks (WIP)
+
+`./run_performance_parity.sh` will kick off the benchmarks stored in `evaluation/parity/benchmarks` and write to `experiments/evaluation/parity/benchmarks/uniqueTimestamp/jsonFile.json`
