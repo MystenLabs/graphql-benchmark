@@ -31,7 +31,7 @@
   ([] (->Logger *err*))
 
   ([writer]
-   (let [ch (chan)
+   (let [ch (chan (* 256 1024))
          th (thread
               (binding [*out* writer]
                 (loop []
