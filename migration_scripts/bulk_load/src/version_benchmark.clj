@@ -1,18 +1,16 @@
 (ns version-benchmark
-  (:require [logger :refer [->Logger] :as l]
-            [pool :refer [->Pool signals signal-swap!]]
+  (:require [pool :refer [->Pool signal-swap!]]
             [versions :as v]
             [next.jdbc :as jdbc]
             [clojure.core :as c]
-            [clojure.core.async :as async :refer [go]])
+            [clojure.core.async :as async]
+            [clojure.string :as s])
   (:import [org.postgresql.util PSQLException]))
-
-(def +objects-version+ "amnn_1_object_versions")
 
 (defn objects-version:sample-objects
   "Read a sample of objects from the database, across all partitions.
 
-  Fills the `:object-versions` field in the `signals` table as a side-effect."
+  Fills the `:objects-version` field in the `signals` table as a side-effect."
   [db logger timeout per-partition signals]
   (->Pool :name    "sample-objects"
           :workers 100
@@ -28,7 +26,7 @@
                               object_version,
                               cp_sequence_number
                       FROM
-                              amnn_1_object_versions
+                              objects_version
                       WHERE
                               object_id
                       BETWEEN ? AND ?
@@ -51,43 +49,60 @@
           :finalize
           (fn [{:keys [part status results]}]
             (when (= :success status)
-              (signal-swap! signals :object-versions into results))
+              (signal-swap! signals :objects-version into results))
             nil)))
 
-(defn- add-object-versions
+(defn- add-objects-version
   "Construct a query from a query string and a list of object versions.
 
   Adds a `WHERE` clause to the query string with bindings for each of
   the provided object ID and version pairs, and then creates a vector
   containing that query and all the associated binding values."
-  [query object-versions]
-  (let [conds (repeat (count object-versions)
+  [query objects-version]
+  (let [conds (repeat (count objects-version)
                       "(v.object_id = ? AND v.object_version = ?)")
-        binds (reduce (fn [acc {:amnn_1_object_versions/keys
+        binds (reduce (fn [acc {:objects_version/keys
                                 [object_id object_version]}]
                         (conj acc object_id object_version))
-                      [] object-versions)]
-    (into [(str query (String/join "\nOR      " conds))] binds)))
+                      [] objects-version)]
+    (into [(str query (s/join "\nOR      " conds))] binds)))
+
+(defn- add-objects-version-in
+  "Construct a query from a query string and a list of object versions.
+
+  Adds a `WHERE` cluse to the query with bindings for each provided
+  object ID, wrapped in an `IN` clause."
+  [query objects-version]
+  (let [conds (as-> objects-version %
+                (count %)
+                (repeat % "?")
+                (s/join ", " %)
+                (str "(" % ")"))
+        binds (->> objects-version
+                   (map :objects_version/object_id)
+                   (into []))]
+    (into [(format query conds)] binds)))
 
 (defn- extract-query-plan
   [results]
-  (->> (map (keyword "QUERY PLAN"))
-       (String/join "\n")))
+  (->> results
+       (map (keyword "QUERY PLAN"))
+       (s/join "\n")))
 
 (defn explain-naive-query!
   "A query directly accessing the objects_history table.
 
   Note that it must bind the table to `v` for the `WHERE` clause
-  added by `add-object-versions` to work."
-  [db object-versions]
-  (->> (add-object-versions
+  added by `add-objects-version` to work."
+  [db objects-version]
+  (->> (add-objects-version
         "EXPLAIN ANALYZE SELECT
                  object_digest
          FROM
                  objects_history v
          WHERE
                  "
-        object-versions)
+        objects-version)
        (jdbc/execute! db)
        (extract-query-plan)
        (println)))
@@ -95,24 +110,50 @@
 (defn explain-optimized-query!
   "A query that speeds up accessing historical objects using the
   objects_version table."
-  [db object-versions]
-  (->> (add-object-versions
-        (format
-         "EXPLAIN ANALYZE SELECT
-                  h.object_digest
-          FROM
-                  objects_history h
-          INNER JOIN
-                  %s v
-          ON (
-                  h.object_id = v.object_id
-          AND     h.object_version = v.object_version
-          AND     h.checkpoint_sequence_number = v.cp_sequence_number
-          )
-          WHERE
-                  "
-        +objects-version+)
-        object-versions)
-       (jdbc/execute! db query)
+  [db objects-version]
+  (->> (add-objects-version
+        "EXPLAIN ANALYZE SELECT
+                 h.object_digest
+         FROM
+                 objects_history h
+         INNER JOIN
+                 objects_version v
+         ON (
+                 h.object_id = v.object_id
+         AND     h.object_version = v.object_version
+         AND     h.checkpoint_sequence_number = v.cp_sequence_number
+         )
+         WHERE
+                 "
+        objects-version)
+       (jdbc/execute! db)
        (extract-query-plan)
        (println)))
+
+(defn objects-version:parent-bound-query!
+  "Write a query that retrieves objects that are bounded by "
+  [db object-versions parent-at-version]
+  (as-> (add-objects-version-in
+         "EXPLAIN ANALYZE
+          SELECT DISTINCT ON (v.object_id)
+              h.object_digest
+          FROM
+              objects_version v
+          INNER JOIN
+              objects_history h
+          ON (
+              v.object_id = h.object_id
+          AND v.object_version = h.object_version
+          AND v.cp_sequence_number = h.checkpoint_sequence_number
+          )
+          WHERE
+              v.object_id IN %s
+          AND v.object_version <= ?
+          ORDER BY
+              v.object_id,
+              v.object_version DESC"
+         object-versions) %
+    (conj % parent-at-version)
+    (jdbc/execute! db %)
+    (extract-query-plan %)
+    (println %)))
