@@ -140,3 +140,26 @@ drop index objects_snapshot_package_module_name_full_type;
 --- other queries
 rollback;
 ```
+
+check for indexes that were not created among aprtitions
+```sql
+SELECT partition_name
+FROM (
+    SELECT
+        partition_name,
+        indexname IS NOT NULL AS index_exists
+    FROM (
+        SELECT
+            partition_name,
+            (SELECT indexname
+             FROM pg_indexes
+             WHERE tablename = partition_name
+             AND indexname = 'objects_history_coin_owner_object_id_' || partition_number) AS indexname
+        FROM (
+            SELECT 'objects_history_partition_' || i AS partition_name, i AS partition_number
+            FROM generate_series(0, 390) AS i
+        ) partitions
+    ) indexed_partitions
+) check_partitions
+WHERE NOT index_exists;
+```
