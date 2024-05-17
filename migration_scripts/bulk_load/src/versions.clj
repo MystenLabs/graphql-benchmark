@@ -64,27 +64,6 @@
          (partition:name part))]
        (jdbc/execute! db)))
 
-(defn disable-autovacuum!
-  "Disable auto-vacuum for a table."
-  [db name timeout]
-  (as-> [(format "ALTER TABLE %s SET (autovacuum_enabled = false)"
-                 name)]
-      % (jdbc/execute! db % {:timeout timeout})))
-
-(defn reset-autovacuum!
-  "Reset the decision on whether to auto-vacuum or not to the
-  database-wide setting."
-  [db name timeout]
-  (as-> [(format "ALTER TABLE %s RESET (autovacuum_enabled)"
-                 name)]
-      % (jdbc/execute! db % {:timeout timeout})))
-
-(defn vacuum-and-analyze!
-  "Vacuum and analyze a table."
-  [db name timeout]
-  (as-> [(format "VACUUM ANALYZE %s" name)]
-      % (jdbc/execute! db % {:timeout timeout})))
-
 (defn objects-version:populate!
   "Populate a specific partition table with object versions from the
   history table between checkpoints `lo` (inclusive) and
@@ -184,7 +163,7 @@
           :pending  (range 256)
           :impl     (fn [part reply]
                       (objects-version:create-partition! db part)
-                      (disable-autovacuum! db (partition:name part) timeout)
+                      (db/disable-autovacuum! db (partition:name part) timeout)
                       (reply true))
           :finalize (fn [_] nil)))
 
@@ -260,8 +239,8 @@
           :impl
           (db/worker {:keys [part job timeout]}
             (case job
-              :autovacuum (reset-autovacuum! db (partition:name part) timeout)
-              :analyze    (vacuum-and-analyze! db (partition:name part) timeout)
+              :autovacuum (db/reset-autovacuum! db (partition:name part) timeout)
+              :analyze    (db/vacuum-and-analyze! db (partition:name part) timeout)
               :constrain  (objects-version:constrain! db part timeout)
               :attach     (objects-version:attach! db part timeout)
               :drop-check (objects-version:drop-range-check! db part timeout))

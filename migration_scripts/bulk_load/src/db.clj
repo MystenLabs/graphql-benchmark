@@ -21,6 +21,26 @@
             (jdbc/execute-one! db)
             (:max)))
 
+(defn disable-autovacuum!
+  "Disable auto-vacuum for a table."
+  [db name timeout]
+  (with-table! db name
+    "ALTER TABLE %s SET (autovacuum_enabled = false)"
+    {:timeout timeout}))
+
+(defn reset-autovacuum!
+  "Reset the decision on whether to auto-vacuum or not to the
+  database-wide setting."
+  [db name timeout]
+  (with-table! db name
+    "ALTER TABLE %s RESET (autovacuum_enabled)"
+    {:timeout timeout}))
+
+(defn vacuum-and-analyze!
+  "Vacuum and analyze a table."
+  [db name timeout]
+  (with-table! db name "VACUUM ANALYZE %s" {:timeout timeout}))
+
 (defmacro worker
   "Create a worker function for a pool.
 
