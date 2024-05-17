@@ -21,6 +21,16 @@
             (jdbc/execute-one! db)
             (:max)))
 
+(defn with-table!
+  "Run a transaction represented by a format string, expecting a table name.
+
+  `template` is a format string representing the table's schema, that
+  should expect a single string parameter, the table's name."
+  ([db name template]
+   (jdbc/execute! db [(format template name)]))
+  ([db name template opts]
+   (jdbc/execute! db [(format template name)] opts)))
+
 (defn disable-autovacuum!
   "Disable auto-vacuum for a table."
   [db name timeout]
@@ -40,6 +50,22 @@
   "Vacuum and analyze a table."
   [db name timeout]
   (with-table! db name "VACUUM ANALYZE %s" {:timeout timeout}))
+
+(defn cancel!
+  "Cancel query matching `filter`.
+
+  This should be used carefully, as it can affect other people's jobs
+  running on the same DB."
+  [db filter]
+  (->> ["SELECT
+             pg_cancel_backend(pid)
+         FROM
+             pg_stat_activity
+         WHERE
+             query LIKE ?
+         AND state = 'active'"
+        filter]
+       (jdbc/execute! db)))
 
 (defmacro worker
   "Create a worker function for a pool.
