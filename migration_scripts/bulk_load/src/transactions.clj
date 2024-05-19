@@ -22,17 +22,6 @@
 (defn transactions:partition-name [n]
   (str +transactions+ "_partition_" n))
 
-;; Normalized versions of the above tables, holding the same data.
-(def +tx-norm+            (str prefix "norm_transactions"))
-(def +tx-norm-calls-pkg+  (str prefix "norm_tx_calls_pkg"))
-(def +tx-norm-calls-mod+  (str prefix "norm_tx_calls_mod"))
-(def +tx-norm-calls-fun+  (str prefix "norm_tx_calls_fun"))
-(def +tx-norm-senders+    (str prefix "norm_tx_senders"))
-(def +tx-norm-recipients+ (str prefix "norm_tx_recipients"))
-(def +tx-norm-inputs+     (str prefix "norm_tx_inputs"))
-(def +tx-norm-changed+    (str prefix "norm_tx_changed"))
-(def +tx-norm-digests+    (str prefix "norm_tx_digests"))
-
 ;; Table: transactions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn transactions:create! [db _timeout]
@@ -364,21 +353,17 @@
               (and (not= 0 retries)
                    [(assoc task :retries (dec retries))])))))
 
-(defn transactions:batches!
-  "Generates a sequence of intervals over transaction sequence numbers.
+(defn transactions:transaction-bounds!
+  "Transaction sequence number bounds for transaction partitions.
 
-  Intervals are pushed into `intervals`, assumed to be an `atom`
-  containing a vector.
+  Bounds are appended to `bounds`, assumed to be an `atom` containing
+  a vector.
 
   Each interval has an inclusive `:lo`wer bound and an exclusive upper
-  bound -- `:hi` -- (measured in transaction sequence numbers), as well
-  as the `part`ition of `transactions` it maps to.
-
-  The intervals combine to cover the range of partitions starting at
-  partition `lo` (inclusive) and ending at partition `hi` (exclusive),
-  and each interval will be no bigger than `batch`."
-  [db lo hi batch logger delta-t intervals]
-  (->Pool :name    "fetch-batches"
+  bound -- `:hi` -- (measured in transaction sequence numbers), as
+  well as the `part`ition of `transactions` it maps to."
+  [db lo hi logger delta-t bounds]
+  (->Pool :name    "fetch-bounds"
           :logger   logger
           :workers (Math/clamp (- hi lo) 4 20)
 
@@ -388,19 +373,18 @@
 
           :impl
           (db/worker {:keys [part]}
-            (->> "SELECT MIN(tx_sequence_number), MAX(tx_sequence_number) FROM %s"
+            (->> "SELECT
+                      MIN(tx_sequence_number),
+                      MAX(tx_sequence_number)
+                  FROM %s"
                  (db/with-table! db (str "transactions_partition_" part))
                  (first)))
 
           :finalize
-          (fn [{:as task min-tx :min max-tx :max :keys [part status retries timeout]}]
+          (fn [{:as task :keys [part status min max retries timeout]}]
             (case status
               :success
-              (do (swap! intervals
-                         #(apply conj %
-                                 (for [lo (range min-tx max-tx batch)
-                                       :let [hi (min (+ lo batch) (inc max-tx))]]
-                                   {:part part :lo lo :hi hi})))
+              (do (swap! bounds conj {:part part :lo min :hi (inc max)})
                   nil)
 
               :timeout
@@ -409,6 +393,26 @@
               :error
               (and (not= 0 retries)
                    [(assoc task :retries (dec retries))])))))
+
+(defn bounds->batches
+  "Convert transaction sequence number bounds to batches of work.
+
+  Takes a sequence of transaction sequence number bounds, mapped to
+  the partition they correspond to, and returns a new sequence, of
+  units of work, also mapped to partitions.
+
+  Each unit of work has an inclusive `:lo`wer bound and an exclusive
+  upper bound -- `:hi` -- (measured in transaction sequence numbers),
+  as well as the `part`ition of `transactions` it maps to.
+
+  The intervals combine to cover the same range of partitions as
+  `bounds`, they are also non-overlapping, and have a max width of
+  `batch`."
+  [bounds batch]
+  (for [{part-lo :lo part-hi :hi part :part} bounds
+        lo (range part-lo part-hi batch)
+        :let [hi (min (+ lo batch) part-hi)]]
+    {:part part :lo lo :hi hi}))
 
 (defn transactions:load-signals []
   (signals "transactions" 0
@@ -425,7 +429,7 @@
   Transfers data from the partitions of the `transactions` table, as
   well as from the index tables. `batches` controls the intervals of
   transactions (by sequence number) that are loaded."
-  [db batches logger timeout signals]
+  [db bounds batch logger timeout signals]
   (->Pool :name   "bulk-load"
           :logger  logger
           :workers 100
@@ -433,7 +437,7 @@
           :pending
           (concat
            ;; Main partitions
-           (for [{:keys [part lo hi]} batches]
+           (for [{:keys [part lo hi]} (-> bounds (bounds->batches batch))]
              {:lo lo :hi hi
               :from (str "transactions_partition_" part)
               :to   (transactions:partition-name part)
@@ -594,7 +598,7 @@
           :pending
           [{:fn tx-calls:constrain!           :label :tx-calls/constrain}
            {:fn tx-senders:constrain!         :label :tx-senders/constrain}
-           {:fn tx-recipients:constrain!      :label :tx-recipients/constain}
+           {:fn tx-recipients:constrain!      :label :tx-recipients/constrain}
            {:fn tx-input-objects:constrain!   :label :tx-input-objects/constrain}
            {:fn tx-changed-objects:constrain! :label :tx-changed-objects/constrain}
            {:fn tx-digests:constrain!         :label :tx-digests/constrain}
