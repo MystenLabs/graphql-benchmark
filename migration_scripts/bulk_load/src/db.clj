@@ -1,5 +1,7 @@
 (ns db
-  (:require [next.jdbc :as jdbc])
+  (:require [next.jdbc :as jdbc]
+            [clojure.data.json :as json]
+            [clojure.string :as s])
   (:import [org.postgresql.util PSQLException]))
 
 (defn- env [var] (System/getenv var))
@@ -67,6 +69,31 @@
          AND pid <> pg_backend_pid()"
         filter]
        (jdbc/execute! db)))
+
+(defn explain-analyze!
+  "EXPLAIN ANALYZE a query.
+
+  Returns the execution and planning time of the query on success, or
+  the keyword :timeout if it was not possible to finish the operation
+  within the alotted time."
+  [db timeout [query & binds]]
+  (let [QUERY-PLAN (keyword "QUERY PLAN")
+        key (fn [key] (-> key s/lower-case (s/replace #"\s+" "-") keyword))
+        extract
+        (fn [{e :execution-time p :planning-time {r :actual-rows} :plan}]
+          {:execution-time e :planning-time p :actual-rows r})]
+    (try
+      (as-> query %
+        (format "EXPLAIN (ANALYZE, FORMAT JSON) %s" %)
+        (into [%] binds)
+        (jdbc/execute-one! db % {:timeout timeout})
+        (.getValue (QUERY-PLAN %))
+        (json/read-str % :key-fn key)
+        (extract (first %)))
+      (catch PSQLException e
+        (if (= "57014" (.getSQLState e))
+          {:status :timeout}
+          (throw e))))))
 
 (defmacro worker
   "Create a worker function for a pool.
