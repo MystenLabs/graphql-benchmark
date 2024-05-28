@@ -23,8 +23,8 @@
 ;;   other "atomic" queries.
 ;; - Extra indices have been largely removed from the main table,
 ;;   where they are hard to leverage because of the partitioning
-;;   scheme -- they get their own side tables now (like digests and system
-;;   transactions)
+;;   scheme -- they get their own side tables now (like digests and
+;;   system transactions)
 
 ;; Table Names ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

@@ -450,7 +450,7 @@
                          {:from "tx_input_objects"   :to +tx-input-objects+}
                          {:from "tx_changed_objects" :to +tx-changed-objects+}
                          {:from "tx_digests"         :to +tx-digests+}]
-                 {:keys [lo hi]} batches]
+                 {:keys [lo hi]} (-> bounds (bounds->batches batch))]
              (assoc tables :lo lo :hi hi :retries 3)))
 
           :impl
