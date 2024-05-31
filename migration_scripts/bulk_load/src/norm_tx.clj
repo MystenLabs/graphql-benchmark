@@ -41,6 +41,7 @@
 (def +tx-changed-objects+ (str prefix "tx_changed_objects"))
 (def +tx-digests+         (str prefix "tx_digests"))
 (def +tx-system+          (str prefix "tx_system"))
+(def +cp-tx+              (str prefix "cp_tx"))
 
 (defn transactions:partition-name [n]
   (str +transactions+ "_partition_" n))
@@ -242,7 +243,9 @@
 
 (defn tx-digests:constrain! [db]
   (db/with-table! db +tx-digests+
-    "ALTER TABLE %1$s ADD PRIMARY KEY (tx_digest, tx_sequence_number)"))
+    "ALTER TABLE %1$s
+     ADD PRIMARY KEY (tx_digest, tx_sequence_number),
+     ADD CONSTRAINT %1$s_unique UNIQUE (tx_digest)"))
 
 ;; Table: norm_tx_system ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -257,6 +260,25 @@
 (defn tx-system:constrain! [db]
   (db/with-table! db +tx-system+
     "ALTER TABLE %1$s ADD PRIMARY KEY (tx_sequence_number)"))
+
+;; Table: norm_cp_tx ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn cp-tx:create! [db timeout]
+  (jdbc/with-transaction [tx db]
+    (db/with-table! db +cp-tx+
+      "CREATE TABLE %s (
+            checkpoint_sequence_number  BIGINT,
+            min_tx_sequence_number      BIGINT,
+            max_tx_sequence_number      BIGINT
+       )")
+    (db/disable-autovacuum! tx +cp-tx+ timeout)))
+
+(defn cp-tx:constrain! [db]
+  (db/with-table! db +cp-tx+
+    "ALTER TABLE %1$s
+     ADD PRIMARY KEY (checkpoint_sequence_number),
+     ALTER COLUMN min_tx_sequence_number SET NOT NULL,
+     ALTER COLUMN max_tx_sequence_number SET NOT NULL"))
 
 ;; Bulk Loading ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -295,6 +317,8 @@
                 {:fn tx-digests:create! :label "tx-digests"
                  :timeout delta-t :retries 3}
                 {:fn tx-system:create! :label "tx-system"
+                 :timeout delta-t :retries 3}
+                {:fn cp-tx:create! :label "cp-tx"
                  :timeout delta-t :retries 3})
 
           :impl
@@ -328,7 +352,7 @@
            (map (fn [t] {:table t :timeout delta-t :retries 3})
                 [+transactions+ +tx-calls-pkg+ +tx-calls-mod+ +tx-calls-fun+
                  +tx-senders+ +tx-recipients+ +tx-input-objects+
-                 +tx-changed-objects+ +tx-digests+ +tx-system+]))
+                 +tx-changed-objects+ +tx-digests+ +tx-system+ +cp-tx+]))
 
           :impl
           (db/worker {:keys [table timeout]}
@@ -369,7 +393,7 @@
   bounds of partitions to load into, in transaction sequence numbers,
   and `batch` is their batch size."
   [db bounds batch logger signals]
-  (->Pool :name   "bulk-load"
+  (->Pool :name   "tx:bulk-load"
           :logger  logger
           :workers 100
 
@@ -523,6 +547,59 @@
               (:timeout :error)
               (do (signal-swap! signals :failed-jobs conj task) nil)))))
 
+(defn checkpoints:load-signals []
+  (signals :cp-tx       0
+           :failed-jobs []))
+
+(defn checkpoints:bulk-load!
+  "Load data into `+cp-tx+` corresponding to checkpoints between
+  `cp-lo` (inclusive) and `cp-hi` (exclusive).
+
+  Work is split up into batches of at most `batch`, and if a given
+  batch fails for some reason (times out or errors), then it will be
+  logged in `(:failed-jobs signals)`, to be retried later."
+  [db cp-lo cp-hi batch logger signals]
+  (->Pool :name   "cp:bulk-load"
+          :logger  logger
+          :workers 20
+
+          :pending
+          (if (some-> signals :failed-jobs deref first)
+            (map #(select-keys % [:lo :hi])
+                 @(:failed-jobs signals))
+            (for [lo (range cp-lo cp-hi batch)
+                  :let [hi (min (+ lo batch) cp-hi)]]
+              {:lo lo :hi hi}))
+
+          :impl
+          (db/worker {:keys [lo hi timeout]}
+            (->> [(format
+                   "INSERT INTO %s
+                    SELECT
+                        checkpoint_sequence_number,
+                        MIN(tx_sequence_number) AS min_tx_sequence_number,
+                        MAX(tx_sequence_number) AS max_tx_sequence_number
+                    FROM
+                        transactions
+                    WHERE
+                        checkpoint_sequence_number BETWEEN ? AND ?
+                    GROUP BY
+                        checkpoint_sequence_number"
+                   +cp-tx+)
+                  lo (dec hi)]
+                 (jdbc/execute! db)
+                 first :next.jdbc/update-count
+                 (hash-map :updated)))
+
+          :finalize
+          (fn [{:as task :keys [status updated]}]
+            (case status
+              :success
+              (do (signal-swap! signals :cp-tx + updated) nil)
+
+              (:timeout :error)
+              (do (signal-swap! signals :failed-job conj task) nil)))))
+
 (defn transactions:attach-signals []
   (signals :autovacuum       0
            :analyze          0
@@ -587,8 +664,7 @@
           :workers 10
 
           :pending
-          [
-           {:fn tx-calls-pkg:constrain!       :label :tx-calls-pkg/constrain}
+          [{:fn tx-calls-pkg:constrain!       :label :tx-calls-pkg/constrain}
            {:fn tx-calls-mod:constrain!       :label :tx-calls-mod/constrain}
            {:fn tx-calls-fun:constrain!       :label :tx-calls-fun/constrain}
            {:fn tx-senders:constrain!         :label :tx-senders/constrain}
@@ -596,7 +672,8 @@
            {:fn tx-input-objects:constrain!   :label :tx-input-objects/constrain}
            {:fn tx-changed-objects:constrain! :label :tx-changed-objects/constrain}
            {:fn tx-digests:constrain!         :label :tx-digests/constrain}
-           {:fn tx-system:constrain!          :label :tx-system/constrain}]
+           {:fn tx-system:constrain!          :label :tx-system/constrain}
+           {:fn cp-tx:constrain!              :label :cp-tx/constrain}]
 
           :impl
           (db/worker {work :fn} (work db) nil)
@@ -610,3 +687,49 @@
               ;; jobs. Errors will be signaled in the logs and we can
               ;; retry at our leisure.
               :timeout nil :error nil))))
+
+(defn transactions:vacuum-index-signals []
+  (signals :autovacuum  0
+           :analyze     0
+           :failed-jobs []))
+
+(defn transactions:vacuum-index!
+  "Re-enable auto-vacuum on the index tables, and perform a vacuum/analyze.
+
+  `signals` is assumed to be a signal map containing `:autovacuum` and
+  `:analyze` counts, as well as a list of `:failed-jobs`. If the
+  failed jobs list is non-empty, those jobs will be retried instead of
+  starting a fresh set of jobs."
+  [db logger signals]
+  (->Pool :name   "vacuum-index"
+          :logger  logger
+          :workers 10
+
+          :pending
+          (if (some-> signals :failed-jobs deref first)
+            (map #(select-keys % [:job :index])
+                 @(:failed-jobs signals))
+            (map #(hash-map :job :autovacuum :index %)
+                 [+tx-calls-pkg+ +tx-calls-mod+ +tx-calls-fun+
+                  +tx-senders+ +tx-recipients+
+                  +tx-input-objects+ +tx-changed-objects+
+                  +tx-digests+ +cp-tx+
+                  +tx-system+]))
+
+          :impl
+          (db/worker {:keys [job index]}
+            (case job
+              :autovacuum (db/reset-autovacuum! db   index 3600)
+              :analyze    (db/vacuum-and-analyze! db index 3600))
+            nil)
+
+          :finalize
+          (fn [{:as task :keys [status job]}]
+            (case status
+              :success
+              (do (signal-swap! signals job inc)
+                  (when (= :autovacuum job)
+                    [(assoc task :job :analyze)]))
+
+              (:timeout :error)
+              (do (signal-swap! signals :failed-jobs conj task) nil)))))
