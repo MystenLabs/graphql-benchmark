@@ -1,32 +1,14 @@
 (ns tx-benchmark
-  (:require [combinations :refer [&& || |? <- *?]]
+  (:require [combinations :refer [&& || |?]]
             [db]
-            [pool :refer [->Pool signals signal-swap!]]
-            [transactions :as tx
-             :refer [+transactions+ +tx-calls+ +tx-senders+ +tx-recipients+
+            [hex :refer [hex->bytes]]
+            [transactions
+             :refer [+transactions+
+                     +tx-calls+
+                     +tx-senders+ +tx-recipients+
                      +tx-input-objects+ +tx-changed-objects+]]
             [alphabase.base58 :as b58]
-            [honey.sql :as sql]
-            [next.jdbc :as jdbc]
-            [clojure.string :as s]))
-
-(defn hex->bytes
-  "Convert a hex literal string into a length 32 byte array.
-
-  The hex literal may have trailing zeroes removed, and can be in a
-  normal literal form (starting with 0x) or in a postgres form
-  starting with \\x."
-  [hex]
-  (assert (or (s/starts-with? hex "0x")
-              (s/starts-with? hex "\\x"))
-          "Hex literals must start with '0x'")
-  (as-> hex %
-      (subs % 2)
-      (format "%64s" %)
-      (s/replace % \space \0)
-      (partition 2 %)
-      (map #(-> % s/join (Integer/parseInt 16)) %)
-      (byte-array %)))
+            [honey.sql :as sql]))
 
 (defn tx-filter
   [& {:keys [pkg mod fun    ;; function
@@ -113,65 +95,3 @@
 
       (|? {:after  {:tx 746619070 :cp 10427600}})
       (|? {:before {:tx 746625335 :cp 10428013}})))
-
-(defn benchmark-signals []
-  (signals :success [] :failure []))
-
-(defn run-benchmark!
-  "Gather plan times and execution times for various `inputs` to
-  `transactions-filter`.
-
-  `signals` is expected to be an `atom` containing a map with keys
-  `:success` and `:failure`."
-  [db inputs logger timeout signals]
-  (->Pool :name   "run-benchmark"
-          :logger  logger
-          :workers 50
-
-          :pending inputs
-
-          :impl
-          (db/worker input
-            (->> (apply concat input)
-                 (apply transactions-filter)
-                 (db/explain-analyze! db timeout)))
-
-          :finalize
-          (fn [{:as task :keys [status]}]
-            (case status
-              (:success :timeout)
-              (do (signal-swap! signals :success conj task) nil)
-              :error
-              (do (signal-swap! signals :failure conj task) nil)))))
-
-(defn success-rates
-  "Given a sequence of benchmark results, returns the rate at which
-  queries timeout.
-
-  Returns a map from sets of keys in benchmark results to their
-  success rate (proportion of queries including these keys that did
-  not timeout)."
-  [results]
-  (let [success (atom {})
-        timeout (atom {})
-        or-zero  #(fn [x] (% (or x 0)))
-        success! #(swap! success update % (or-zero inc))
-        timeout! #(swap! timeout update % (or-zero dec))]
-    (doseq [result results
-            :when (or (= :timeout (:status result))
-                      (pos? (:actual-rows result)))
-            keys (as-> result % (keys %) (into #{} %)
-                   (disj % :status :planning-time :execution-time :actual-rows)
-                   (*? (lazy-seq %)))]
-      (case (:status result)
-        :success (success! keys)
-        :timeout (timeout! keys)))
-    (-> (merge-with
-          (fn [s t] (/ (double s) (- s t)))
-          @success @timeout)
-        (update-vals
-         (fn [rate]
-           (cond
-             (double? rate) rate
-             (neg? rate) 0.0
-             (pos? rate) 1.0))))))
