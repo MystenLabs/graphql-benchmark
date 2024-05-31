@@ -620,3 +620,47 @@
               ;; jobs. Errors will be signaled in the logs and we can
               ;; retry at our leisure.
               :timeout nil :error nil))))
+
+(defn transactions:vacuum-index-signals []
+  (signals :autovacuum  0
+           :analyze     0
+           :failed-jobs []))
+
+(defn transactions:vacuum-index!
+  "Re-enable auto-vacuum on the index tables, and perform a vacuum/analyze.
+
+  `signals` is assumed to be a signal map containing `:autovacuum` and
+  `:analyze` counts, as well as a list of `:failed-jobs`. If the
+  failed jobs list is non-empty, those jobs will be retried instead of
+  starting a fresh set of jobs."
+  [db logger signals]
+  (->Pool :name   "vacuum-index"
+          :logger  logger
+          :workers 10
+
+          :pending
+          (if (some-> signals :failed-jobs deref first)
+            (map #(select-keys % [:job :index])
+                 @(:failed-jobs signals))
+            (map #(hash-map :job :autovacuum :index %)
+                 [+tx-calls+ +tx-senders+ +tx-recipients+
+                  +tx-input-objects+ +tx-changed-objects+
+                  +tx-digests+]))
+
+          :impl
+          (db/worker {:keys [job index]}
+            (case job
+              :autovacuum (db/reset-autovacuum!   db index 3600)
+              :analyze    (db/vacuum-and-analyze! db index 3600))
+            nil)
+
+          :finalize
+          (fn [{:as task :keys [status job]}]
+            (case status
+              :success
+              (do (signal-swap! signals job inc)
+                  (when (= :autovacuum job)
+                    [(assoc task :job :analyze)]))
+
+              (:timeout :error)
+              (do (signal-swap! signals :failed-jobs conj task) nil)))))
