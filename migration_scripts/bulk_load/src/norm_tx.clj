@@ -2,7 +2,7 @@
   (:require [transactions :refer [bounds->batches]]
             [db]
             [logger :refer [->Logger] :as l]
-            [pool :refer [->Pool, signal-swap! signals]]
+            [pool :refer [->Pool worker]]
             [next.jdbc :as jdbc]
             [clojure.string :refer [starts-with?]]))
 
@@ -48,7 +48,7 @@
 
 ;; Table: norm_transactions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn transactions:create! [db _timeout]
+(defn transactions:create! [db]
   (db/with-table! db +transactions+
     "CREATE TABLE %s (
            tx_sequence_number         BIGINT          PRIMARY KEY,
@@ -64,7 +64,7 @@
            success_command_count      SMALLINT        NOT NULL
        ) PARTITION BY RANGE (tx_sequence_number)"))
 
-(defn transactions:create-partition! [db n timeout]
+(defn transactions:create-partition! [db n]
   (jdbc/with-transaction [tx db]
     (db/with-table! tx (transactions:partition-name n)
       "CREATE TABLE %s (
@@ -80,56 +80,55 @@
            transaction_kind           SMALLINT,
            success_command_count      SMALLINT
        )")
-    (db/disable-autovacuum! tx (transactions:partition-name n) timeout)))
+    (db/disable-autovacuum! tx (transactions:partition-name n))))
 
 (defn transactions:constrain!
   "Add constraints to partition `n` of the `transactions` table.
 
   `lo` and `hi` are the inclusive and exclusive bounds on transasction
   sequence numbers in the partition."
-  [db n lo hi timeout]
-  (as-> [(format
-          "ALTER TABLE %1$s
-           ADD PRIMARY KEY (tx_sequence_number),
-           ALTER COLUMN transaction_digest         SET NOT NULL,
-           ALTER COLUMN raw_transaction            SET NOT NULL,
-           ALTER COLUMN raw_effects                SET NOT NULL,
-           ALTER COLUMN checkpoint_sequence_number SET NOT NULL,
-           ALTER COLUMN timestamp_ms               SET NOT NULL,
-           ALTER COLUMN object_changes             SET NOT NULL,
-           ALTER COLUMN balance_changes            SET NOT NULL,
-           ALTER COLUMN events                     SET NOT NULL,
-           ALTER COLUMN transaction_kind           SET NOT NULL,
-           ALTER COLUMN success_command_count      SET NOT NULL,
-           ADD CONSTRAINT %1$s_partition_check CHECK (
-               %2$d <= tx_sequence_number
-           AND tx_sequence_number < %3$d
-           )"
+  [db n lo hi]
+  (->> [(format
+         "ALTER TABLE %1$s
+          ADD PRIMARY KEY (tx_sequence_number),
+          ALTER COLUMN transaction_digest         SET NOT NULL,
+          ALTER COLUMN raw_transaction            SET NOT NULL,
+          ALTER COLUMN raw_effects                SET NOT NULL,
+          ALTER COLUMN checkpoint_sequence_number SET NOT NULL,
+          ALTER COLUMN timestamp_ms               SET NOT NULL,
+          ALTER COLUMN object_changes             SET NOT NULL,
+          ALTER COLUMN balance_changes            SET NOT NULL,
+          ALTER COLUMN events                     SET NOT NULL,
+          ALTER COLUMN transaction_kind           SET NOT NULL,
+          ALTER COLUMN success_command_count      SET NOT NULL,
+          ADD CONSTRAINT %1$s_partition_check CHECK (
+              %2$d <= tx_sequence_number
+          AND tx_sequence_number < %3$d
+          )"
          (transactions:partition-name n) lo hi)]
-      % (jdbc/execute! db % {:timeout timeout})))
+       (jdbc/execute! db)))
 
-(defn transactions:attach! [db n lo hi timeout]
-  (as-> [(format
-          "ALTER TABLE %s
-           ATTACH PARTITION %s FOR VALUES FROM (%d) to (%d)"
+(defn transactions:attach! [db n lo hi]
+  (->> [(format
+         "ALTER TABLE %s
+          ATTACH PARTITION %s FOR VALUES FROM (%d) to (%d)"
           +transactions+ (transactions:partition-name n) lo hi)]
-      % (jdbc/execute! db % {:timeout timeout})))
+       (jdbc/execute! db)))
 
-(defn transactions:drop-range-check! [db n timeout]
+(defn transactions:drop-range-check! [db n]
   (db/with-table! db (transactions:partition-name n)
-    "ALTER TABLE %1$s DROP CONSTRAINT %1$s_partition_check"
-    {:timeout timeout}))
+    "ALTER TABLE %1$s DROP CONSTRAINT %1$s_partition_check"))
 
 ;; Table: norm_tx_calls_pkg ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn tx-calls-pkg:create! [db timeout]
+(defn tx-calls-pkg:create! [db]
   (jdbc/with-transaction [tx db]
     (db/with-table! tx +tx-calls-pkg+
       "CREATE TABLE %s (
             package                     BYTEA,
             tx_sequence_number          BIGINT
        )")
-    (db/disable-autovacuum! tx +tx-calls-pkg+ timeout)))
+    (db/disable-autovacuum! tx +tx-calls-pkg+)))
 
 (defn tx-calls-pkg:constrain! [db]
   (db/with-table! db +tx-calls-pkg+
@@ -137,7 +136,7 @@
 
 ;; Table: norm_tx_calls_mod ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn tx-calls-mod:create! [db timeout]
+(defn tx-calls-mod:create! [db]
   (jdbc/with-transaction [tx db]
     (db/with-table! tx +tx-calls-mod+
       "CREATE TABLE %s (
@@ -145,7 +144,7 @@
             module                      TEXT,
             tx_sequence_number          BIGINT
        )")
-    (db/disable-autovacuum! tx +tx-calls-mod+ timeout)))
+    (db/disable-autovacuum! tx +tx-calls-mod+)))
 
 (defn tx-calls-mod:constrain! [db]
   (db/with-table! db +tx-calls-mod+
@@ -153,7 +152,7 @@
 
 ;; Table: norm_tx_calls_fun ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn tx-calls-fun:create! [db timeout]
+(defn tx-calls-fun:create! [db]
   (jdbc/with-transaction [tx db]
     (db/with-table! tx +tx-calls-fun+
       "CREATE TABLE %s (
@@ -162,7 +161,7 @@
             func                        TEXT,
             tx_sequence_number          BIGINT
        )")
-    (db/disable-autovacuum! tx +tx-calls-fun+ timeout)))
+    (db/disable-autovacuum! tx +tx-calls-fun+)))
 
 (defn tx-calls-fun:constrain! [db]
   (db/with-table! db +tx-calls-fun+
@@ -171,14 +170,14 @@
 
 ;; Table: norm_tx_senders ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn tx-senders:create! [db timeout]
+(defn tx-senders:create! [db]
   (jdbc/with-transaction [tx db]
     (db/with-table! tx +tx-senders+
       "CREATE TABLE %s (
             sender                      BYTEA,
             tx_sequence_number          BIGINT
        )")
-    (db/disable-autovacuum! tx +tx-senders+ timeout)))
+    (db/disable-autovacuum! tx +tx-senders+)))
 
 (defn tx-senders:constrain! [db]
   (db/with-table! db +tx-senders+
@@ -186,14 +185,14 @@
 
 ;; Table: norm_tx_recipients ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn tx-recipients:create! [db timeout]
+(defn tx-recipients:create! [db]
   (jdbc/with-transaction [tx db]
     (db/with-table! tx +tx-recipients+
       "CREATE TABLE %s (
             recipient                   BYTEA,
             tx_sequence_number          BIGINT
        )")
-    (db/disable-autovacuum! tx +tx-recipients+ timeout)))
+    (db/disable-autovacuum! tx +tx-recipients+)))
 
 (defn tx-recipients:constrain! [db]
   (db/with-table! db +tx-recipients+
@@ -201,14 +200,14 @@
 
 ;; Table: norm_tx_input_objects ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn tx-input-objects:create! [db timeout]
+(defn tx-input-objects:create! [db]
   (jdbc/with-transaction [tx db]
     (db/with-table! tx +tx-input-objects+
       "CREATE TABLE %s (
             object_id                   BYTEA,
             tx_sequence_number          BIGINT
        )")
-    (db/disable-autovacuum! tx +tx-input-objects+ timeout)))
+    (db/disable-autovacuum! tx +tx-input-objects+)))
 
 (defn tx-input-objects:constrain! [db]
   (db/with-table! db +tx-input-objects+
@@ -217,14 +216,14 @@
 
 ;; Table: norm_tx_changes_objects ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn tx-changed-objects:create! [db timeout]
+(defn tx-changed-objects:create! [db]
   (jdbc/with-transaction [tx db]
     (db/with-table! db +tx-changed-objects+
       "CREATE TABLE %s (
             object_id                   BYTEA,
             tx_sequence_number          BIGINT
        )")
-    (db/disable-autovacuum! tx +tx-changed-objects+ timeout)))
+    (db/disable-autovacuum! tx +tx-changed-objects+)))
 
 (defn tx-changed-objects:constrain! [db]
   (db/with-table! db +tx-changed-objects+
@@ -232,14 +231,14 @@
 
 ;; Table: norm_tx_digests ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn tx-digests:create! [db timeout]
+(defn tx-digests:create! [db]
   (jdbc/with-transaction [tx db]
     (db/with-table! db +tx-digests+
       "CREATE TABLE %s (
             tx_digest                   BYTEA,
             tx_sequence_number          BIGINT
        )")
-    (db/disable-autovacuum! tx +tx-digests+ timeout)))
+    (db/disable-autovacuum! tx +tx-digests+)))
 
 (defn tx-digests:constrain! [db]
   (db/with-table! db +tx-digests+
@@ -249,13 +248,13 @@
 
 ;; Table: norm_tx_system ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn tx-system:create! [db timeout]
+(defn tx-system:create! [db]
   (jdbc/with-transaction [tx db]
     (db/with-table! db +tx-system+
       "CREATE TABLE %s (
             tx_sequence_number          BIGINT
        )")
-    (db/disable-autovacuum! tx +tx-system+ timeout)))
+    (db/disable-autovacuum! tx +tx-system+)))
 
 (defn tx-system:constrain! [db]
   (db/with-table! db +tx-system+
@@ -263,7 +262,7 @@
 
 ;; Table: norm_cp_tx ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn cp-tx:create! [db timeout]
+(defn cp-tx:create! [db]
   (jdbc/with-transaction [tx db]
     (db/with-table! db +cp-tx+
       "CREATE TABLE %s (
@@ -271,7 +270,7 @@
             min_tx_sequence_number      BIGINT,
             max_tx_sequence_number      BIGINT
        )")
-    (db/disable-autovacuum! tx +cp-tx+ timeout)))
+    (db/disable-autovacuum! tx +cp-tx+)))
 
 (defn cp-tx:constrain! [db]
   (db/with-table! db +cp-tx+
@@ -287,103 +286,50 @@
 
   Creates the main table, partitions between `lo` (inclusive) and
   `hi` (exclusive), and all the indexing tables, on `db`."
-  [db lo hi logger delta-t]
+  [db lo hi logger & {:keys [retry]}]
   (->Pool :name    "create-tables"
           :logger   logger
           :workers (Math/clamp (- hi lo) 4 20)
 
           :pending
-          (conj (for [n (range lo hi)]
-                  {:fn #(transactions:create-partition! %1 n %2)
-                   :label (str "partition-" n)
-                   :timeout delta-t
-                   :retries 3})
-                {:fn transactions:create! :label "transactions"
-                 :timeout delta-t :retries 3}
-                {:fn tx-calls-pkg:create! :label "tx-calls-pkg"
-                 :timeout delta-t :retries 3}
-                {:fn tx-calls-mod:create! :label "tx-calls-mod"
-                 :timeout delta-t :retries 3}
-                {:fn tx-calls-fun:create! :label "tx-calls-fun"
-                 :timeout delta-t :retries 3}
-                {:fn tx-senders:create! :label "tx-senders"
-                 :timeout delta-t :retries 3}
-                {:fn tx-recipients:create! :label "tx-recipients"
-                 :timeout delta-t :retries 3}
-                {:fn tx-input-objects:create! :label "tx-input-objects"
-                 :timeout delta-t :retries 3}
-                {:fn tx-changed-objects:create! :label "tx-changed-objects"
-                 :timeout delta-t :retries 3}
-                {:fn tx-digests:create! :label "tx-digests"
-                 :timeout delta-t :retries 3}
-                {:fn tx-system:create! :label "tx-system"
-                 :timeout delta-t :retries 3}
-                {:fn cp-tx:create! :label "cp-tx"
-                 :timeout delta-t :retries 3})
+          (or retry
+              (conj (for [n (range lo hi)]
+                      {:fn #(transactions:create-partition! %1 n)
+                       :label (str "partition-" n)})
+                    {:fn transactions:create! :label "transactions"}
+                    {:fn tx-calls-pkg:create! :label "tx-calls-pkg"}
+                    {:fn tx-calls-mod:create! :label "tx-calls-mod"}
+                    {:fn tx-calls-fun:create! :label "tx-calls-fun"}
+                    {:fn tx-senders:create! :label "tx-senders"}
+                    {:fn tx-recipients:create! :label "tx-recipients"}
+                    {:fn tx-input-objects:create! :label "tx-input-objects"}
+                    {:fn tx-changed-objects:create! :label "tx-changed-objects"}
+                    {:fn tx-digests:create! :label "tx-digests"}
+                    {:fn tx-system:create! :label "tx-system"}
+                    {:fn cp-tx:create! :label "cp-tx"}))
 
-          :impl
-          (db/worker {builder :fn timeout :timeout}
-            (builder db timeout) nil)
-
-          :finalize
-          (fn [{:as task :keys [status timeout retries]}]
-            (case status
-              :success nil
-
-              :timeout
-              [(assoc task :timeout (+ timeout delta-t))]
-
-              :error
-              (and (not= 0 retries)
-                   [(assoc task :retries (dec retries))])))))
+          :impl (worker {builder :fn} (builder db) nil)))
 
 (defn transactions:drop-all!
   "Drop all relevant transactions tables."
-  [db lo hi logger delta-t]
+  [db lo hi logger & {:keys [retry]}]
   (->Pool :name    "drop-tables"
           :logger   logger
           :workers (Math/clamp (- hi lo) 4 20)
 
           :pending
-          (concat
-           (for [n (range lo hi)]
-             {:table (transactions:partition-name n)
-              :timeout delta-t :retries 3})
-           (map (fn [t] {:table t :timeout delta-t :retries 3})
-                [+transactions+ +tx-calls-pkg+ +tx-calls-mod+ +tx-calls-fun+
-                 +tx-senders+ +tx-recipients+ +tx-input-objects+
-                 +tx-changed-objects+ +tx-digests+ +tx-system+ +cp-tx+]))
+          (or retry
+              (concat
+               (for [n (range lo hi)]
+                 {:table (transactions:partition-name n)})
+               (map #(hash-map :table %)
+                    [+transactions+ +tx-calls-pkg+ +tx-calls-mod+ +tx-calls-fun+
+                     +tx-senders+ +tx-recipients+ +tx-input-objects+
+                     +tx-changed-objects+ +tx-digests+ +tx-system+ +cp-tx+])))
 
           :impl
-          (db/worker {:keys [table timeout]}
-            (db/with-table! db table
-              "DROP TABLE %s" {:timeout timeout})
-            nil)
-
-          :finalize
-          (fn [{:as task :keys [status timeout retries]}]
-            (case status
-              :success nil
-
-              :timeout
-              [(assoc task :timeout (+ timeout delta-t))]
-
-              :error
-              (and (not= 0 retries)
-                   [(assoc task :retries (dec retries))])))))
-
-(defn transactions:load-signals []
-  (signals :transactions       0
-           :tx-calls-pkg       0
-           :tx-calls-mod       0
-           :tx-calls-fun       0
-           :tx-senders         0
-           :tx-recipients      0
-           :tx-input-objects   0
-           :tx-changed-objects 0
-           :tx-digests         0
-           :tx-system          0
-           :failed-jobs        []))
+          (worker {:keys [table]}
+            (db/with-table! db table "DROP TABLE IF EXISTS %s") nil)))
 
 (defn transactions:bulk-load!
   "Bulk load all transactions into the normalized subset tables.
@@ -392,25 +338,23 @@
   well as from the index tables. `bounds` is a sequence containing the
   bounds of partitions to load into, in transaction sequence numbers,
   and `batch` is their batch size."
-  [db bounds batch logger signals]
+  [db bounds batch logger & {:keys [retry]}]
   (->Pool :name   "tx:bulk-load"
           :logger  logger
           :workers 100
 
           :pending
-          (if (some-> signals :failed-jobs deref first)
-            (map #(select-keys % [:lo :hi :part :fill])
-                 @(:failed-jobs signals))
-            (for [batch (-> bounds (bounds->batches batch))
-                  table [:transactions
-                         :tx-calls-pkg :tx-calls-mod :tx-calls-fun
-                         :tx-senders :tx-recipients
-                         :tx-input-objects :tx-changed-objects
-                         :tx-digests :tx-system]]
-              (assoc batch :fill table)))
+          (or retry
+              (for [batch (-> bounds (bounds->batches batch))
+                    table [:transactions
+                           :tx-calls-pkg :tx-calls-mod :tx-calls-fun
+                           :tx-senders :tx-recipients
+                           :tx-input-objects :tx-changed-objects
+                           :tx-digests :tx-system]]
+                (assoc batch :fill table)))
 
           :impl
-          (db/worker {:keys [lo hi part fill]}
+          (worker {:keys [lo hi part fill]}
             (->> [(case fill
                     :transactions
                     (format
@@ -539,40 +483,28 @@
                  (hash-map :updated)))
 
           :finalize
-          (fn [{:as task :keys [status fill updated]}]
-            (case status
-              :success
-              (do (signal-swap! signals fill + updated) nil)
-
-              (:timeout :error)
-              (do (signal-swap! signals :failed-jobs conj task) nil)))))
-
-(defn checkpoints:load-signals []
-  (signals :cp-tx       0
-           :failed-jobs []))
+          (fn [{:keys [status fill updated]} signals]
+            (when (= :success status)
+              (swap! signals update fill (fnil + 0) updated) nil))))
 
 (defn checkpoints:bulk-load!
   "Load data into `+cp-tx+` corresponding to checkpoints between
   `cp-lo` (inclusive) and `cp-hi` (exclusive).
 
-  Work is split up into batches of at most `batch`, and if a given
-  batch fails for some reason (times out or errors), then it will be
-  logged in `(:failed-jobs signals)`, to be retried later."
-  [db cp-lo cp-hi batch logger signals]
+  Work is split up into batches of at most `batch`."
+  [db cp-lo cp-hi batch logger & {:keys [retry]}]
   (->Pool :name   "cp:bulk-load"
           :logger  logger
           :workers 20
 
           :pending
-          (if (some-> signals :failed-jobs deref first)
-            (map #(select-keys % [:lo :hi])
-                 @(:failed-jobs signals))
-            (for [lo (range cp-lo cp-hi batch)
-                  :let [hi (min (+ lo batch) cp-hi)]]
-              {:lo lo :hi hi}))
+          (or retry
+              (for [lo (range cp-lo cp-hi batch)
+                    :let [hi (min (+ lo batch) cp-hi)]]
+                {:lo lo :hi hi}))
 
           :impl
-          (db/worker {:keys [lo hi timeout]}
+          (worker {:keys [lo hi]}
             (->> [(format
                    "INSERT INTO %s
                     SELECT
@@ -592,21 +524,9 @@
                  (hash-map :updated)))
 
           :finalize
-          (fn [{:as task :keys [status updated]}]
-            (case status
-              :success
-              (do (signal-swap! signals :cp-tx + updated) nil)
-
-              (:timeout :error)
-              (do (signal-swap! signals :failed-job conj task) nil)))))
-
-(defn transactions:attach-signals []
-  (signals :autovacuum       0
-           :analyze          0
-           :constrain        0
-           :attach           0
-           :drop-check       0
-           :failed-jobs      []))
+          (fn [{:keys [status updated]} signals]
+            (when (= :success status)
+              (swap! signals update :cp-tx (fnil + 0) updated) nil))))
 
 (defn transactions:index-and-attach-partitions!
   "Attach `part`ition`s` to the `transactions` table.
@@ -615,121 +535,87 @@
   the `part`ition number, its inclusive transaction lower bound, and
   its exclusive transaction upper bound.
 
-  `signals` is updated with the number of partitions that have passed
-  through each phase.
-  "
-  [db parts logger delta-t signals]
+  The returned signals map is updated with the number of partitions
+  that have passed through each phase."
+  [db parts logger & {:keys [retry]}]
   (->Pool :name   "index-and-attach"
           :logger  logger
           :workers 50
 
-          :pending
-          (for [part parts]
-            (assoc part :job :autovacuum :timeout delta-t))
+          :pending (or retry (for [part parts] (assoc part :job :autovacuum)))
 
           :impl
-          (db/worker {:keys [part job lo hi timeout]}
+          (worker {:keys [part job lo hi]}
             (case job
-              :autovacuum (db/reset-autovacuum! db (transactions:partition-name part) timeout)
-              :analyze    (db/vacuum-and-analyze! db (transactions:partition-name part) timeout)
-              :constrain  (transactions:constrain! db part lo hi timeout)
-              :attach     (transactions:attach! db part lo hi timeout)
-              :drop-check (transactions:drop-range-check! db part timeout))
+              :autovacuum (db/reset-autovacuum! db (transactions:partition-name part))
+              :analyze    (db/vacuum-and-analyze! db (transactions:partition-name part))
+              :constrain  (transactions:constrain! db part lo hi)
+              :attach     (transactions:attach! db part lo hi)
+              :drop-check (transactions:drop-range-check! db part))
             nil)
 
           :finalize
-          (fn [{:as batch :keys [part job status timeout]}]
+          (fn [{:as task :keys [job status]} signals]
             (let [phases [:autovacuum :analyze :constrain :attach :drop-check]
                   edges  (into {} (map vector phases (rest phases)))]
-              (case status
-                :success
-                (do (signal-swap! signals job inc)
-                    (when-let [next (edges job)]
-                      [(assoc batch :job next)]))
-
-                :timeout
-                [(assoc batch :timeout (+ timeout delta-t))]
-
-                :error
-                (do (signal-swap! signals :failed-jobs conj batch) nil))))))
+              (when (= :success status)
+                (swap! signals update job (fnil inc 0))
+                (when-let [next (edges job)]
+                  [(assoc task :job next)]))))))
 
 (defn transactions:constrain-and-index-tx!
-  "Add indices and constraints to side tables.
-
-  `signals` is assumed to be an atom containing a vector, that the
-  labels for completed jobs are pushed into."
-  [db logger signals]
+  "Add indices and constraints to side tables."
+  [db logger & {:keys [retry]}]
   (->Pool :name    "index-and-constrain"
           :logger  logger
           :workers 10
 
           :pending
-          [{:fn tx-calls-pkg:constrain!       :label :tx-calls-pkg/constrain}
-           {:fn tx-calls-mod:constrain!       :label :tx-calls-mod/constrain}
-           {:fn tx-calls-fun:constrain!       :label :tx-calls-fun/constrain}
-           {:fn tx-senders:constrain!         :label :tx-senders/constrain}
-           {:fn tx-recipients:constrain!      :label :tx-recipients/constrain}
-           {:fn tx-input-objects:constrain!   :label :tx-input-objects/constrain}
-           {:fn tx-changed-objects:constrain! :label :tx-changed-objects/constrain}
-           {:fn tx-digests:constrain!         :label :tx-digests/constrain}
-           {:fn tx-system:constrain!          :label :tx-system/constrain}
-           {:fn cp-tx:constrain!              :label :cp-tx/constrain}]
+          (or retry
+              [{:fn tx-calls-pkg:constrain!       :label :tx-calls-pkg/constrain}
+               {:fn tx-calls-mod:constrain!       :label :tx-calls-mod/constrain}
+               {:fn tx-calls-fun:constrain!       :label :tx-calls-fun/constrain}
+               {:fn tx-senders:constrain!         :label :tx-senders/constrain}
+               {:fn tx-recipients:constrain!      :label :tx-recipients/constrain}
+               {:fn tx-input-objects:constrain!   :label :tx-input-objects/constrain}
+               {:fn tx-changed-objects:constrain! :label :tx-changed-objects/constrain}
+               {:fn tx-digests:constrain!         :label :tx-digests/constrain}
+               {:fn tx-system:constrain!          :label :tx-system/constrain}
+               {:fn cp-tx:constrain!              :label :cp-tx/constrain}])
 
-          :impl
-          (db/worker {work :fn} (work db) nil)
+          :impl (worker {work :fn} (work db) nil)
 
           :finalize
-          (fn [{:as task :keys [status label timeout]}]
-            (case status
-              :success (do (swap! signals conj label) nil)
-              ;; Ignore timeouts and errors. Timeouts can only be
-              ;; triggered by another process canceling this pool's
-              ;; jobs. Errors will be signaled in the logs and we can
-              ;; retry at our leisure.
-              :timeout nil :error nil))))
-
-(defn transactions:vacuum-index-signals []
-  (signals :autovacuum  0
-           :analyze     0
-           :failed-jobs []))
+          (fn [{:as task :keys [status label timeout]} signals]
+            (when (= :success status)
+              (swap! signals update :done (fnil conj []) label) nil))))
 
 (defn transactions:vacuum-index!
-  "Re-enable auto-vacuum on the index tables, and perform a vacuum/analyze.
-
-  `signals` is assumed to be a signal map containing `:autovacuum` and
-  `:analyze` counts, as well as a list of `:failed-jobs`. If the
-  failed jobs list is non-empty, those jobs will be retried instead of
-  starting a fresh set of jobs."
-  [db logger signals]
+  "Re-enable auto-vacuum on the index tables, and perform a vacuum/analyze."
+  [db logger & {:keys [retry]}]
   (->Pool :name   "vacuum-index"
           :logger  logger
           :workers 10
 
           :pending
-          (if (some-> signals :failed-jobs deref first)
-            (map #(select-keys % [:job :index])
-                 @(:failed-jobs signals))
-            (map #(hash-map :job :autovacuum :index %)
-                 [+tx-calls-pkg+ +tx-calls-mod+ +tx-calls-fun+
-                  +tx-senders+ +tx-recipients+
-                  +tx-input-objects+ +tx-changed-objects+
-                  +tx-digests+ +cp-tx+
-                  +tx-system+]))
+          (or retry
+              (map #(hash-map :job :autovacuum :index %)
+                   [+tx-calls-pkg+ +tx-calls-mod+ +tx-calls-fun+
+                    +tx-senders+ +tx-recipients+
+                    +tx-input-objects+ +tx-changed-objects+
+                    +tx-digests+ +cp-tx+
+                    +tx-system+]))
 
           :impl
-          (db/worker {:keys [job index]}
+          (worker {:keys [job index]}
             (case job
-              :autovacuum (db/reset-autovacuum! db   index 3600)
-              :analyze    (db/vacuum-and-analyze! db index 3600))
+              :autovacuum (db/reset-autovacuum! db   index)
+              :analyze    (db/vacuum-and-analyze! db index))
             nil)
 
           :finalize
-          (fn [{:as task :keys [status job]}]
-            (case status
-              :success
-              (do (signal-swap! signals job inc)
-                  (when (= :autovacuum job)
-                    [(assoc task :job :analyze)]))
-
-              (:timeout :error)
-              (do (signal-swap! signals :failed-jobs conj task) nil)))))
+          (fn [{:as task :keys [status job]} signals]
+            (when (= :success status)
+              (swap! signals update job (fnil inc 0))
+              (when (= :autovacuum job)
+                [(assoc task :job :analyze)])))))

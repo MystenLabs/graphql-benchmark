@@ -23,10 +23,8 @@
 
   `template` is a format string representing the table's schema, that
   should expect a single string parameter, the table's name."
-  ([db name template]
-   (jdbc/execute! db [(format template name)]))
-  ([db name template opts]
-   (jdbc/execute! db [(format template name)] opts)))
+  [db name template]
+  (jdbc/execute! db [(format template name)]))
 
 (defn max-checkpoint-in
   "Get the maxmium checkpoint sequence number in the given table."
@@ -46,31 +44,21 @@
 
 (defn disable-autovacuum!
   "Disable auto-vacuum for a table."
-  ([db name]
-   (with-table! db name
-     "ALTER TABLE %s SET (autovacuum_enabled = false)"))
-  ([db name timeout]
-   (with-table! db name
-     "ALTER TABLE %s SET (autovacuum_enabled = false)"
-     {:timeout timeout})))
+  [db name]
+  (with-table! db name
+    "ALTER TABLE %s SET (autovacuum_enabled = false)"))
 
 (defn reset-autovacuum!
   "Reset the decision on whether to auto-vacuum or not to the
   database-wide setting."
-  ([db name]
-   (with-table! db name
-     "ALTER TABLE %s RESET (autovacuum_enabled)"))
-  ([db name timeout]
-   (with-table! db name
-     "ALTER TABLE %s RESET (autovacuum_enabled)"
-     {:timeout timeout})))
+  [db name]
+  (with-table! db name
+    "ALTER TABLE %s RESET (autovacuum_enabled)"))
 
 (defn vacuum-and-analyze!
   "Vacuum and analyze a table."
-  ([db name]
-   (with-table! db name "VACUUM ANALYZE %s"))
-  ([db name timeout]
-   (with-table! db name "VACUUM ANALYZE %s" {:timeout timeout})))
+  [db name]
+  (with-table! db name "VACUUM ANALYZE %s"))
 
 (defn cancel!
   "Cancel query matching `filter`.
@@ -95,12 +83,13 @@
   Prints the plain text output, or throws an error if the query fails
   for some reason (including timeout)."
   [db timeout [query & binds]]
-  (as-> query %
-    (format "EXPLAIN (ANALYZE, BUFFERS) %s" %)
-    (into [%] binds)
-    (jdbc/execute! db % {:timeout timeout})
-    (doseq [line %]
-      (println line))))
+  (let [QUERY-PLAN (keyword "QUERY PLAN")]
+    (as-> query %
+      (format "EXPLAIN (ANALYZE, BUFFERS) %s" %)
+      (into [%] binds)
+      (jdbc/execute! db % {:timeout timeout})
+      (doseq [line %]
+        (println (QUERY-PLAN line))))))
 
 (defn explain-analyze-json!
   "EXPLAIN ANALYZE a query.
@@ -126,51 +115,6 @@
         (if (= "57014" (.getSQLState e))
           {:status :timeout}
           (throw e))))))
-
-(defmacro worker
-  "Create a worker function for a pool.
-
-  The worker is passed a description of the unit of work (expected to
-  be a map) which is bound to `param`, and then its `body` is
-  evaluated. The return value of `body` is merged with the description
-  of the work and sent back to the supervisor, along with a `:status`
-  of `:success`.
-
-  The returned worker detects timeouts and errors, returning the
-  description of work with a `:status` of `:timeout` or `:error`
-  respectively. Errors are additionally annotated with the `:error`
-  itself."
-  [param & body]
-  `(fn [param# reply#]
-     (try (->> (let [~param param#] ~@body)
-               (merge param# {:status :success})
-               (reply#))
-          (catch PSQLException e#
-            (if (= "57014" (.getSQLState e#))
-              (reply# (assoc param# :status :timeout))
-              (reply# (assoc param# :status :error :error e#))))
-          (catch Throwable t#
-            (reply# (assoc param# :status :error :error t#))))))
-
-(defmacro worker-v2
-  "Create a worker function for a pool.
-
-  The worker is passed a description of the unit of work (expected to
-  be a map) which is bound to `param`, and then its `body` is
-  evaluated. The return value of `body` is merged with the description
-  of the work and sent back to the supervisor, along with a `:status`
-  of `:success`.
-
-  The returned worker detects errors (including timeouts), returning
-  the description of work with a `:status` of `:error`. Errors are
-  additionally annotated with the `:error` itself."
-  [param & body]
-  `(fn [param# reply#]
-     (try (->> (let [~param param#] ~@body)
-               (merge param# {:status :success})
-               (reply#))
-          (catch Throwable t#
-            (reply# (assoc param# :status :error :error t#))))))
 
 (defn- sqlize-bytea [bs]
   (as-> bs %

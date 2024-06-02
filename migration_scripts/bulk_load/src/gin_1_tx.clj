@@ -2,7 +2,7 @@
   (:require [db]
             [logger :refer [->Logger] :as l]
             [next.jdbc :as jdbc]
-            [pool-v2 :refer [->Pool worker]]
+            [pool :refer [->Pool worker]]
             [transactions :refer [bounds->batches]]))
 
 ;; # 1-GIN Transactions Schema
@@ -447,7 +447,7 @@
             nil)
 
           :finalize
-          (fn [{:as task :keys [part lo hi status job]} signals]
+          (fn [{:as task :keys [status job]} signals]
             (let [phases [:autovacuum :analyze :constrain :index-filter :attach :drop-check]
                   edges  (into {} (map vector phases (rest phases)))]
                 (when (= :success status)
