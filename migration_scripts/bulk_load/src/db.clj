@@ -46,23 +46,31 @@
 
 (defn disable-autovacuum!
   "Disable auto-vacuum for a table."
-  [db name timeout]
-  (with-table! db name
-    "ALTER TABLE %s SET (autovacuum_enabled = false)"
-    {:timeout timeout}))
+  ([db name]
+   (with-table! db name
+     "ALTER TABLE %s SET (autovacuum_enabled = false)"))
+  ([db name timeout]
+   (with-table! db name
+     "ALTER TABLE %s SET (autovacuum_enabled = false)"
+     {:timeout timeout})))
 
 (defn reset-autovacuum!
   "Reset the decision on whether to auto-vacuum or not to the
   database-wide setting."
-  [db name timeout]
-  (with-table! db name
-    "ALTER TABLE %s RESET (autovacuum_enabled)"
-    {:timeout timeout}))
+  ([db name]
+   (with-table! db name
+     "ALTER TABLE %s RESET (autovacuum_enabled)"))
+  ([db name timeout]
+   (with-table! db name
+     "ALTER TABLE %s RESET (autovacuum_enabled)"
+     {:timeout timeout})))
 
 (defn vacuum-and-analyze!
   "Vacuum and analyze a table."
-  [db name timeout]
-  (with-table! db name "VACUUM ANALYZE %s" {:timeout timeout}))
+  ([db name]
+   (with-table! db name "VACUUM ANALYZE %s"))
+  ([db name timeout]
+   (with-table! db name "VACUUM ANALYZE %s" {:timeout timeout})))
 
 (defn cancel!
   "Cancel query matching `filter`.
@@ -141,6 +149,26 @@
             (if (= "57014" (.getSQLState e#))
               (reply# (assoc param# :status :timeout))
               (reply# (assoc param# :status :error :error e#))))
+          (catch Throwable t#
+            (reply# (assoc param# :status :error :error t#))))))
+
+(defmacro worker-v2
+  "Create a worker function for a pool.
+
+  The worker is passed a description of the unit of work (expected to
+  be a map) which is bound to `param`, and then its `body` is
+  evaluated. The return value of `body` is merged with the description
+  of the work and sent back to the supervisor, along with a `:status`
+  of `:success`.
+
+  The returned worker detects errors (including timeouts), returning
+  the description of work with a `:status` of `:error`. Errors are
+  additionally annotated with the `:error` itself."
+  [param & body]
+  `(fn [param# reply#]
+     (try (->> (let [~param param#] ~@body)
+               (merge param# {:status :success})
+               (reply#))
           (catch Throwable t#
             (reply# (assoc param# :status :error :error t#))))))
 
