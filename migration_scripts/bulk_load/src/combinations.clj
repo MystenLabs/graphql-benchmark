@@ -70,7 +70,12 @@
   introduction of a value from the choices, from the perspective of
   other combinators."
   [& streams]
-  (apply || ::skip streams))
+  (->> (mapcat <- streams)
+       (filter #(and (not= ::skip %)
+                     (not (and (seq? %)
+                               (empty? %)))))
+       (cons ::skip)
+       (lazy-seq)))
 
 (defn *?
   "Kleene star operator for lazy sequences.
