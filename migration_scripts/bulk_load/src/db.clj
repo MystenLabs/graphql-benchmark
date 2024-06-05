@@ -1,7 +1,8 @@
 (ns db
-  (:require [next.jdbc :as jdbc]
-            [clojure.data.json :as json]
-            [clojure.string :as s])
+  (:require [clojure.data.json :as json]
+            [clojure.string :as s]
+            [honey.sql.protocols :refer [InlineValue]]
+            [next.jdbc :as jdbc])
   (:import [org.postgresql.util PSQLException]))
 
 (defn- env [var] (System/getenv var))
@@ -17,12 +18,6 @@
     :user     (or user     (env "DBUSER") "postgres")
     :password (or password (env "DBPASS") "postgrespw")}))
 
-(defn max-checkpoint
-  "Get the maximum checkpoint sequence number."
-  [db] (->> ["SELECT MAX(checkpoint_sequence_number) FROM objects_history"]
-            (jdbc/execute-one! db)
-            (:max)))
-
 (defn with-table!
   "Run a transaction represented by a format string, expecting a table name.
 
@@ -32,6 +27,22 @@
    (jdbc/execute! db [(format template name)]))
   ([db name template opts]
    (jdbc/execute! db [(format template name)] opts)))
+
+(defn max-checkpoint-in
+  "Get the maxmium checkpoint sequence number in the given table."
+  [db table]
+  (first (with-table! db table
+           "SELECT MAX(checkpoint_sequence_number) FROM %s")))
+
+(defn min-checkpoint-in
+  "Get the maxmium checkpoint sequence number in the given table."
+  [db table]
+  (first (with-table! db table
+           "SELECT MIN(checkpoint_sequence_number) FROM %s")))
+
+(defn max-checkpoint
+  "Get the maximum checkpoint sequence number."
+  [db] (max-checkpoint-in "objects_history"))
 
 (defn disable-autovacuum!
   "Disable auto-vacuum for a table."
@@ -70,7 +81,20 @@
         filter]
        (jdbc/execute! db)))
 
-(defn explain-analyze!
+(defn explain-analyze-print!
+  "EXPLAIN ANALYZE a query.
+
+  Prints the plain text output, or throws an error if the query fails
+  for some reason (including timeout)."
+  [db timeout [query & binds]]
+  (as-> query %
+    (format "EXPLAIN (ANALYZE, BUFFERS) %s" %)
+    (into [%] binds)
+    (jdbc/execute! db % {:timeout timeout})
+    (doseq [line %]
+      (println line))))
+
+(defn explain-analyze-json!
   "EXPLAIN ANALYZE a query.
 
   Returns the execution and planning time of the query on success, or
@@ -119,3 +143,22 @@
               (reply# (assoc param# :status :error :error e#))))
           (catch Throwable t#
             (reply# (assoc param# :status :error :error t#))))))
+
+(defn- sqlize-bytea [bs]
+  (as-> bs %
+    (map #(format "%02x" %) %)
+    (s/join %)
+    (str "E'\\\\x" % "'")))
+
+(extend-protocol InlineValue
+  (Class/forName "[B")
+  (sqlize [this]
+    (sqlize-bytea this)))
+
+(extend-protocol InlineValue
+  (Class/forName "[[B")
+  (sqlize [this]
+    (as-> this %
+      (map sqlize-bytea %)
+      (s/join ", " %)
+      (str "(" % ")"))))
