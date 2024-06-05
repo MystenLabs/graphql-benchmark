@@ -63,7 +63,8 @@
              pg_stat_activity
          WHERE
              query LIKE ?
-         AND state = 'active'"
+         AND state = 'active'
+         AND pid <> pg_backend_pid()"
         filter]
        (jdbc/execute! db)))
 
