@@ -2,10 +2,7 @@
   (:require [db]
             [logger :refer [->Logger] :as l]
             [pool :refer [->Pool signal-swap!]]
-            [next.jdbc :as jdbc]
-            [clojure.core :as c]
-            [clojure.core.async :as async])
-  (:import [org.postgresql.util PSQLException]))
+            [next.jdbc :as jdbc]))
 
 (def +objects-version+ "objects_version")
 
@@ -66,27 +63,6 @@
           )"
          (partition:name part))]
        (jdbc/execute! db)))
-
-(defn disable-autovacuum!
-  "Disable auto-vacuum for a table."
-  [db name timeout]
-  (as-> [(format "ALTER TABLE %s SET (autovacuum_enabled = false)"
-                 name)]
-      % (jdbc/execute! db % {:timeout timeout})))
-
-(defn reset-autovacuum!
-  "Reset the decision on whether to auto-vacuum or not to the
-  database-wide setting."
-  [db name timeout]
-  (as-> [(format "ALTER TABLE %s RESET (autovacuum_enabled)"
-                 name)]
-      % (jdbc/execute! db % {:timeout timeout})))
-
-(defn vacuum-and-analyze!
-  "Vacuum and analyze a table."
-  [db name timeout]
-  (as-> [(format "VACUUM ANALYZE %s" name)]
-      % (jdbc/execute! db % {:timeout timeout})))
 
 (defn objects-version:populate!
   "Populate a specific partition table with object versions from the
@@ -187,7 +163,7 @@
           :pending  (range 256)
           :impl     (fn [part reply]
                       (objects-version:create-partition! db part)
-                      (disable-autovacuum! db (partition:name part) timeout)
+                      (db/disable-autovacuum! db (partition:name part) timeout)
                       (reply true))
           :finalize (fn [_] nil)))
 
@@ -212,19 +188,10 @@
               {:lo lo :hi hi :part part :retries 3})
 
             :impl
-            (fn [{:as batch :keys [lo hi part]} reply]
-              (try (->> (objects-version:populate! db part lo hi timeout)
-                        first :next.jdbc/update-count
-                        (assoc batch
-                               :status :success
-                               :updated)
-                        (reply))
-                   (catch PSQLException e
-                     (if (= "57014" (.getSQLState e))
-                       (reply (assoc batch :status :timeout))
-                       (reply (assoc batch :status :error :error e))))
-                   (catch Throwable t
-                     (reply (assoc batch :status :error :error t)))))
+            (db/worker {:keys [lo hi part]}
+              (->> (objects-version:populate! db part lo hi timeout)
+                   first :next.jdbc/update-count
+                   (hash-map :updated)))
 
             :finalize
             (fn [{:keys [lo hi part retries status updated]}]
@@ -270,21 +237,14 @@
             {:part part :job :autovacuum :timeout delta-t})
 
           :impl
-          (fn [{:as batch :keys [part job timeout]} reply]
-            (try
-              (case job
-                :autovacuum (reset-autovacuum! db (partition:name part) timeout)
-                :analyze    (vacuum-and-analyze! db (partition:name part) timeout)
-                :constrain  (objects-version:constrain! db part timeout)
-                :attach     (objects-version:attach! db part timeout)
-                :drop-check (objects-version:drop-range-check! db part timeout))
-              (reply (assoc batch :status :success))
-              (catch PSQLException e
-                (if (= "57014" (.getSQLState e))
-                  (reply (assoc batch :status :timeout))
-                  (reply (assoc batch :status :error :error e))))
-              (catch Throwable t
-                (reply (assoc batch :status :error :error t)))))
+          (db/worker {:keys [part job timeout]}
+            (case job
+              :autovacuum (db/reset-autovacuum! db (partition:name part) timeout)
+              :analyze    (db/vacuum-and-analyze! db (partition:name part) timeout)
+              :constrain  (objects-version:constrain! db part timeout)
+              :attach     (objects-version:attach! db part timeout)
+              :drop-check (objects-version:drop-range-check! db part timeout))
+            nil)
 
           :finalize
           (fn [{:as batch :keys [part job status timeout]}]
