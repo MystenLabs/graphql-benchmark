@@ -1,26 +1,17 @@
 (ns bench
   (:require [combinations :refer [*?]]
             [db]
-            [pool :refer [->Pool signal-swap!]]
+            [pool :refer [->Pool worker]]
             [next.jdbc :as jdbc])
   (:refer-clojure :exclude [run!]))
-
-(defn signals
-  "Signals produced by running benchmarks.
-
-  Benchmarks split inputs into two categories: success and failure.
-  Failed benchmarks are ones that produced some kind of unexpected
-  error. All other benchmarks are considered successful, including
-  benchmarks that timed out."
-  [] (pool/signals :success [] :failure []))
 
 (defn run!
   "Gather plan times and execution times for various `inputs` to
   `benchmark`.
 
-  `signals` is expected to be an `atom` containing a map with keys
-  `:success` and `:failure`."
-  [benchmark db inputs logger timeout signals]
+  The results are gathered in the signals map returned by this
+  function, under the `:results`."
+  [benchmark db inputs logger timeout]
   (->Pool :name   "run-benchmark"
           :logger  logger
           :workers 50
@@ -28,18 +19,15 @@
           :pending inputs
 
           :impl
-          (db/worker input
+          (worker input
             (->> (apply concat input)
                  (apply benchmark)
                  (db/explain-analyze-json! db timeout)))
 
           :finalize
-          (fn [{:as task :keys [status]}]
-            (case status
-              (:success :timeout)
-              (do (signal-swap! signals :success conj task) nil)
-              :error
-              (do (signal-swap! signals :failure conj task) nil)))))
+          (fn [{:as task :keys [status]} signals]
+            (when (or (= :success status) (= :timeout status))
+              (swap! signals update :results conj task) nil))))
 
 (defn success-rates
   "Given a sequence of benchmark results, returns the rate at which

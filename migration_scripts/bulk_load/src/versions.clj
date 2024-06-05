@@ -1,7 +1,7 @@
 (ns versions
   (:require [db]
             [logger :refer [->Logger] :as l]
-            [pool :refer [->Pool signal-swap!]]
+            [pool :refer [->Pool worker]]
             [next.jdbc :as jdbc]))
 
 (def +objects-version+ "objects_version")
@@ -40,10 +40,10 @@
   [db]
   (->> [(format
          "CREATE TABLE IF NOT EXISTS %s (
-            object_id          BYTEA,
-            object_version     BIGINT,
-            cp_sequence_number BIGINT NOT NULL,
-            PRIMARY KEY (object_id, object_version)
+              object_id          BYTEA,
+              object_version     BIGINT,
+              cp_sequence_number BIGINT NOT NULL,
+              PRIMARY KEY (object_id, object_version)
           )
           PARTITION BY RANGE (object_id)"
          +objects-version+)]
@@ -57,9 +57,9 @@
   [db part]
   (->> [(format
          "CREATE TABLE IF NOT EXISTS %s (
-            object_id          BYTEA,
-            object_version     BIGINT,
-            cp_sequence_number BIGINT
+              object_id          BYTEA,
+              object_version     BIGINT,
+              cp_sequence_number BIGINT
           )"
          (partition:name part))]
        (jdbc/execute! db)))
@@ -67,197 +67,162 @@
 (defn objects-version:populate!
   "Populate a specific partition table with object versions from the
   history table between checkpoints `lo` (inclusive) and
-  `hi` (exclusive). Applies a timeout, in seconds to the request."
-  [db part lo hi timeout]
-  (as-> [(format
-          "INSERT INTO %s (
-               object_id,
-               object_version,
-               cp_sequence_number
-           )
-           SELECT
-               object_id,
-               object_version,
-               checkpoint_sequence_number
-           FROM
-               objects_history
-           WHERE
-               checkpoint_sequence_number BETWEEN ? AND ?
-           AND object_id BETWEEN ? AND ?"
+  `hi` (exclusive)."
+  [db part lo hi]
+  (->> [(format
+         "INSERT INTO %s (
+              object_id,
+              object_version,
+              cp_sequence_number
+          )
+          SELECT
+              object_id,
+              object_version,
+              checkpoint_sequence_number
+          FROM
+              objects_history
+          WHERE
+              checkpoint_sequence_number BETWEEN ? AND ?
+          AND object_id BETWEEN ? AND ?"
           (partition:name part))
          lo (dec hi)
          (partition:lb part)
          (partition:ub part)]
-      % (jdbc/execute! db % {:timeout timeout})))
+       (jdbc/execute! db)))
 
 (defn objects-version:constrain!
   "Add constraints to a given `part`ition.
 
   Readying it to be added to the main table."
-  [db part timeout]
-  (let [name (partition:name part)]
-    (as-> [(format "ALTER TABLE %s
-                    ADD PRIMARY KEY (object_id, object_version),
-                    ALTER COLUMN cp_sequence_number SET NOT NULL,
-                    ADD CONSTRAINT %s_partition_check CHECK (
-                      %s <= object_id %s
-                    )"
-                   name name
-                   (->> part
-                        (partition:lb)
-                        (partition-literal))
-                   (->> (inc part)
-                        (partition:lb)
-                        (partition-literal)
-                        (str "AND object_id < ")
-                        (if (= part 255) "")))]
-        % (jdbc/execute! db % {:timeout timeout}))))
+  [db part]
+  (->> [(format
+         "ALTER TABLE %1$s
+          ADD PRIMARY KEY (object_id, object_version),
+          ALTER COLUMN cp_sequence_number SET NOT NULL,
+          ADD CONSTRAINT %1$s_partition_check CHECK (
+            %2$s <= object_id %3$s
+          )"
+         (partition:name part)
+         (->> part
+              (partition:lb)
+              (partition-literal))
+         (->> (inc part)
+              (partition:lb)
+              (partition-literal)
+              (str "AND object_id < ")
+              (if (= part 255) "")))]
+       (jdbc/execute! db)))
 
 (defn objects-version:attach!
   "Attach a partition to the main table."
-  [db part timeout]
-  (as-> [(format "ALTER TABLE %s ATTACH PARTITION %s
-                  FOR VALUES FROM (%s) TO (%s)"
-                 +objects-version+
-                 (partition:name part)
-                 (->> part
-                      (partition:lb)
-                      (partition-literal))
-                 (->> (inc part)
-                      (partition:lb)
-                      (partition-literal)
-                      (if (= part 255) "MAXVALUE")))]
-      % (jdbc/execute! db % {:timeout timeout})))
+  [db part]
+  (->> [(format
+          "ALTER TABLE %s ATTACH PARTITION %s
+           FOR VALUES FROM (%s) TO (%s)"
+          +objects-version+
+          (partition:name part)
+          (->> part
+               (partition:lb)
+               (partition-literal))
+          (->> (inc part)
+               (partition:lb)
+               (partition-literal)
+               (if (= part 255) "MAXVALUE")))]
+      (jdbc/execute! db)))
 
 (defn objects-version:drop-range-check!
   "Drop the constraint that was added to speed up attaching the partition."
-  [db part timeout]
-  (let [name (partition:name part)]
-    (as-> [(format "ALTER TABLE %s DROP CONSTRAINT %s_partition_check"
-                   name name)]
-        % (jdbc/execute! db % {:timeout timeout}))))
+  [db part]
+  (->> [(format "ALTER TABLE %1$s DROP CONSTRAINT %1$s_partition_check"
+                (partition:name part))]
+       (jdbc/execute! db)))
 
 (defn objects-version:drop-all!
   "Drop the main table and partitions"
-  [db logger]
-  (->> [(str "DROP TABLE " +objects-version+)]
-       (jdbc/execute! db))
+  [db logger & {:keys [retry]}]
+  (db/with-table! db +objects-version+
+    "DROP TABLE IF EXISTS %s")
   (->Pool :name     "drop-partitions"
           :logger   logger
           :workers  100
-          :pending  (range 256)
-          :impl     (fn [part reply]
-                      (->> [(str "DROP TABLE " (partition:name part))]
-                           (jdbc/execute! db))
-                      (reply true))
-          :finalize (fn [_] nil)))
+          :pending  (or retry (for [part (range 256)] {:part part}))
+          :impl     (worker {:keys [part]}
+                      (db/with-table! db (partition:name part)
+                        "DROP TABLE IF EXISTS %s")
+                      nil)))
 
 (defn objects-version:create-all!
   "Create the main table, (with constraints and indices) and all
   partitions (without constraints and indices)."
-  [db logger timeout]
+  [db logger & {:keys [retry]}]
   (objects-version:create! db)
   (->Pool :name     "create-partitions"
           :logger   logger
           :workers  100
-          :pending  (range 256)
-          :impl     (fn [part reply]
-                      (objects-version:create-partition! db part)
-                      (db/disable-autovacuum! db (partition:name part) timeout)
-                      (reply true))
-          :finalize (fn [_] nil)))
+          :pending  (or retry (for [part (range 256)] {:part part}))
+          :impl     (worker {:keys [part]}
+                      (jdbc/with-transaction [tx db]
+                        (objects-version:create-partition! tx part)
+                        (db/disable-autovacuum! tx (partition:name part))
+                        nil))))
 
 (defn objects-version:bulk-load!
   "Bulk load all object versions from `objects_history` to the partition tables.
 
-  If `signals` includes a `:row-count` key, it will be updated with
-  the number of rows inserted.
-
-  Returns a `kill` channel and a `join` channel for interacting with
-  the job as it is in progress."
-  [db logger timeout signals]
-  (let [max-cp (inc (db/max-checkpoint db)) batch 100000]
+  Loads object versions created in checkpoints up to
+  `max-cp` (exclusive). The returned signals map will contain a
+  `:row-count` key that is updated in real time with the number of
+  rows inserted."
+  [db logger max-cp & {:keys [retry]}]
+  (let [batch 100000]
     (->Pool :name "bulk-load"
             :logger logger
             :workers 50
 
             :pending
-            (for [lo (range 0 max-cp batch)
-                  :let [hi (min (+ lo batch) max-cp)]
-                  part (range 256)]
-              {:lo lo :hi hi :part part :retries 3})
+            (or retry
+                (for [lo (range 0 max-cp batch)
+                      :let [hi (min (+ lo batch) max-cp)]
+                      part (range 256)]
+                  {:lo lo :hi hi :part part}))
 
             :impl
-            (db/worker {:keys [lo hi part]}
-              (->> (objects-version:populate! db part lo hi timeout)
+            (worker {:keys [lo hi part]}
+              (->> (objects-version:populate! db part lo hi)
                    first :next.jdbc/update-count
                    (hash-map :updated)))
 
             :finalize
-            (fn [{:keys [lo hi part retries status updated]}]
-              (case status
-                :success
-                (do (signal-swap! signals :row-count + updated) nil)
-
-                :timeout
-                (let [m (+ lo (quot (- hi lo) 2))]
-                  (and (not= lo m)
-                       [{:lo lo :hi m :part part :retries retries}
-                        {:lo m :hi hi :part part :retries retries}]))
-
-                :error
-                (and (not= 0 retries)
-                     [{:lo lo :hi hi :part part :retries (dec retries)}]))))))
+            (fn [{:keys [status updated]} signals]
+              (when (= :success status)
+                (swap! signals update :row-count (fnil + 0) updated) nil)))))
 
 (defn objects-version:index-and-attach!
   "Add indices and constraints to the partitions and attach them to the
-  main table.
-
-  If `signals` includes a `:autovacuum`, `:analyze`, `:constrain`,
-  `:attach`, and `:drop-check` key, they will be updated with the
-  number of partitions that have reached that phase of the process.
-
-  If `signals` contains a `failed-jobs` key, it will be updated with a
-  list of jobs that failed with some error (other than timeouts).
-
-  `delta-t` specifies the increment of time that we use to update
-  timeouts with: If a job times out, we re-queue it with a timeout
-  that is `delta-t` seconds bigger (`delta-t` is also the initial
-  timeout).
-
-  Returns a `kill` channel and a `join` channel for interacting with
-  the job as it is in progress."
-  [db logger delta-t signals]
+  main table."
+  [db logger & {:keys [retry]}]
   (->Pool :name "attach"
           :logger logger
           :workers 100
 
           :pending
-          (for [part (range 256)]
-            {:part part :job :autovacuum :timeout delta-t})
+          (or retry (for [part (range 256)] {:part part :job :autovacuum}))
 
           :impl
-          (db/worker {:keys [part job timeout]}
+          (worker {:keys [part job]}
             (case job
-              :autovacuum (db/reset-autovacuum! db (partition:name part) timeout)
-              :analyze    (db/vacuum-and-analyze! db (partition:name part) timeout)
-              :constrain  (objects-version:constrain! db part timeout)
-              :attach     (objects-version:attach! db part timeout)
-              :drop-check (objects-version:drop-range-check! db part timeout))
+              :autovacuum (db/reset-autovacuum! db (partition:name part))
+              :analyze    (db/vacuum-and-analyze! db (partition:name part))
+              :constrain  (objects-version:constrain! db part)
+              :attach     (objects-version:attach! db part)
+              :drop-check (objects-version:drop-range-check! db part))
             nil)
 
           :finalize
-          (fn [{:as batch :keys [part job status timeout]}]
+          (fn [{:as task :keys [job status]} signals]
             (let [phases [:autovacuum :analyze :constrain :attach :drop-check]
                   edges  (into {} (map vector phases (rest phases)))]
-              (case status
-                :success
-                (do (signal-swap! signals job inc)
-                    (when-let [next (edges job)]
-                      [{:timeout delta-t :part part :job next}]))
-
-                :timeout
-                [{:part part :job job :timeout (+ timeout delta-t)}]
-
-                :error
-                (do (signal-swap! signals :failed-jobs conj batch) nil))))))
+              (when (= :success status)
+                (swap! signals update job (fnil inc 0))
+                (when-let [next (edges job)]
+                  [(assoc task :job next)]))))))
