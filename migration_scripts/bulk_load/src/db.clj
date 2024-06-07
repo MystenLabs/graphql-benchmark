@@ -16,7 +16,8 @@
     :host     (or host     (env "DBHOST") "localhost")
     :port     (or port     (env "DBPORT") "5432")
     :user     (or user     (env "DBUSER") "postgres")
-    :password (or password (env "DBPASS") "postgrespw")}))
+    :password (or password (env "DBPASS") "postgrespw")
+    :options  "-c plan_cache_mode=force_custom_plan -c work_mem=64MB"}))
 
 (defn with-table!
   "Run a transaction represented by a format string, expecting a table name.
@@ -116,11 +117,21 @@
           {:status :timeout}
           (throw e))))))
 
+(defmacro temporarily
+  "Perform an operation within a transaction that gets rolled back.
+
+  Evaluate `body` within a DB transaction `tx`, created on `db`, that
+  is guaranteed to be rolled back (not committed)."
+  [[tx db] & body]
+  `(jdbc/with-transaction [~tx ~db]
+     (try (do ~@body)
+          (finally (jdbc/execute! ~tx ["ROLLBACK"])))))
+
 (defn- sqlize-bytea [bs]
   (as-> bs %
     (map #(format "%02x" %) %)
     (s/join %)
-    (str "E'\\\\x" % "'")))
+    (str "E'\\\\x" % "'::bytea")))
 
 (extend-protocol InlineValue
   (Class/forName "[B")

@@ -22,7 +22,7 @@
   [& {:keys [pkg mod fun    ;; function
              kind           ;; transaction kind
              cp-< cp-= cp-> ;; checkpoint
-             sign recv addr ;; addresses
+             sign recv      ;; addresses
              input changed  ;; objects
              ids            ;; transaction ids
              after before   ;; pagination
@@ -49,7 +49,6 @@
 
           sign (conj (<byte sign :senders))
           recv (conj (<byte recv :recipients))
-          addr (conj [:or (<byte addr :senders) (<byte addr :recipients)])
 
           input   (conj (<byte input :inputs))
           changed (conj (<byte changed :changed))
@@ -57,7 +56,7 @@
           ids
           (conj [:in (f-> +tx-digests+ :tx-digest) (map b58/decode ids)])
 
-          kind (conj [:= :transaction-kind ({:programmable 0 :system 1} kind)])
+          kind (conj [:= :transaction-kind ({:system 0 :programmable 1} kind)])
 
           cp-< (conj [:< :tx-sequence-number
                       {:select [:min-tx-sequence-number]

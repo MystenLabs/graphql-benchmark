@@ -73,7 +73,7 @@
   [& {:keys [pkg mod fun    ;; function
              kind           ;; transaction kind
              cp-< cp-= cp-> ;; checkpoint
-             sign recv addr ;; addresses
+             sign recv      ;; addresses
              input changed  ;; objects
              ids            ;; transaction ids
              after before   ;; pagination
@@ -125,16 +125,6 @@
 
           sign (conj [:= (f-> +tx-senders+ :sender) (hex->bytes sign)])
           recv (conj [:= (f-> +tx-recipients+ :recipient) (hex->bytes recv)])
-
-          addr
-          (conj [:in :tx-sequence-number
-                 {:union-all
-                  [{:select [:tx-sequence-number]
-                    :from   [(keyword +tx-senders+)]
-                    :where  [:= :sender (hex->bytes addr)]}
-                   {:select [:tx-sequence-number]
-                    :from   [(keyword +tx-recipients+)]
-                    :where  [:= :recipient (hex->bytes addr)]}] }])
 
           input
           (conj [:= (f-> +tx-input-objects+ :object-id) (hex->bytes input)])

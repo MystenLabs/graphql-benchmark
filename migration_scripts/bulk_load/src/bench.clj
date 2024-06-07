@@ -36,14 +36,15 @@
   Returns a map from sets of keys in benchmark results to their
   success rate (proportion of queries including these keys that did
   not timeout)."
-  [results]
+  [results & {:keys [include-empty?]}]
   (let [success (atom {})
         timeout (atom {})
         or-zero  #(fn [x] (% (or x 0)))
         success! #(swap! success update % (or-zero inc))
         timeout! #(swap! timeout update % (or-zero dec))]
     (doseq [result results
-            :when (or (= :timeout (:status result))
+            :when (or include-empty?
+                      (= :timeout (:status result))
                       (pos? (:actual-rows result)))
             keys (as-> result % (keys %) (into #{} %)
                    (disj % :status :planning-time :execution-time :actual-rows)
