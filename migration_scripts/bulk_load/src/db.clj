@@ -95,18 +95,30 @@
 (defn explain-analyze-json!
   "EXPLAIN ANALYZE a query.
 
-  Returns the execution and planning time of the query on success, or
-  the keyword :timeout if it was not possible to finish the operation
-  within the alotted time."
+  Returns a map containing the following fields:
+
+  - `::exec` - total execution time (ms)
+  - `::plan` - total planning time (ms)
+  - `::read` - total I/O read time (ms)
+  - `::rows` - number of rows
+  - `::miss` - number of block cache misses
+  - `::hits` - number of block cache hits"
   [db timeout [query & binds]]
   (let [QUERY-PLAN (keyword "QUERY PLAN")
         key (fn [key] (-> key s/lower-case (s/replace #"\s+" "-") keyword))
         extract
-        (fn [{e :execution-time p :planning-time {r :actual-rows} :plan}]
-          {:execution-time e :planning-time p :actual-rows r})]
+        (fn [{e :execution-time
+              p :planning-time
+              {r :actual-rows
+               m :shared-read-blocks
+               h :shared-hit-blocks
+               i :i/o-read-time
+               } :plan}]
+          {::exec e ::plan p ::read i
+           ::rows r ::miss m ::hits h})]
     (try
       (as-> query %
-        (format "EXPLAIN (ANALYZE, FORMAT JSON) %s" %)
+        (format "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) %s" %)
         (into [%] binds)
         (jdbc/execute-one! db % {:timeout timeout})
         (.getValue (QUERY-PLAN %))
