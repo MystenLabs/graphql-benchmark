@@ -272,7 +272,5 @@
       {:changed tx-changed-objects}
       (|? {:sign tx-senders}
           {:recv tx-recipients}
-          {:addr tx-senders}
-          {:addr tx-recipients}
           {:ids small-tx-ids}
           checkpoints)))

@@ -14,7 +14,7 @@
   [& {:keys [pkg mod fun    ;; function
              kind           ;; transaction kind
              cp-< cp-= cp-> ;; checkpoint
-             sign recv addr ;; addresses
+             sign recv      ;; addresses
              input changed  ;; objects
              ids            ;; transaction ids
              after before   ;; pagination
@@ -36,16 +36,13 @@
                           mod (conj [:= :module mod])
                           fun (conj [:= :func fun]))))
 
-           kind (conj [:= :transaction-kind ({:programmable 0 :system 1} kind)])
+           kind (conj [:= :transaction-kind ({:system 0 :programmable 1} kind)])
            cp-< (conj [:> cp-< :checkpoint-sequence-number])
            cp-= (conj [:= cp-= :checkpoint-sequence-number])
            cp-> (conj [:< cp-> :checkpoint-sequence-number])
 
            sign (conj (tx-in +tx-senders+    [:= :sender    (hex->bytes sign)]))
            recv (conj (tx-in +tx-recipients+ [:= :recipient (hex->bytes recv)]))
-           addr
-           (conj [:or (tx-in +tx-senders+    [:= :sender    (hex->bytes addr)])
-                      (tx-in +tx-recipients+ [:= :recipient (hex->bytes addr)])])
 
            input
            (conj (tx-in +tx-input-objects+   [:= :object-id (hex->bytes input)]))
