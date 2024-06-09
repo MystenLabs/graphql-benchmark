@@ -41,7 +41,7 @@
 
 (defn max-checkpoint
   "Get the maximum checkpoint sequence number."
-  [db] (max-checkpoint-in "objects_history"))
+  [db] (max-checkpoint-in db "objects_history"))
 
 (defn disable-autovacuum!
   "Disable auto-vacuum for a table."
