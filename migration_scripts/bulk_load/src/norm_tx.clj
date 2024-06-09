@@ -214,7 +214,7 @@
     "ALTER TABLE %1$s ADD PRIMARY KEY (object_id, tx_sequence_number)"))
 
 
-;; Table: norm_tx_changes_objects ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Table: norm_tx_changed_objects ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn tx-changed-objects:create! [db]
   (jdbc/with-transaction [tx db]
