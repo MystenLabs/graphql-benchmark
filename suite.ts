@@ -126,19 +126,20 @@ export async function runQuerySuite(args: Arguments) {
   }
 
   const query = print(queries[queryKey] as ASTNode).replace(/\n/g, " ");
-  const fileName = `${queryKey}-${inputJsonPathName}-${new Date().toISOString()}.json`;
+  const fileName = args.outputFileName ? args.outputFileName : `${queryKey}-${inputJsonPathName}-${new Date().toISOString()}.json`;
+  const filePath = path.join(__dirname, "experiments", fileName);
+
   console.log(
     "Streaming to file: ",
-    path.join(__dirname, "experiments", fileName),
+    filePath
   );
 
-  // Create the directory if it doesn't exist
-  const dir = path.join(__dirname, "experiments");
+  const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir);
+    fs.mkdirSync(dir, { recursive: true });
   }
 
-  const stream = fs.createWriteStream(path.join(dir, fileName), {
+  const stream = fs.createWriteStream(filePath, {
     flags: "a",
   });
 

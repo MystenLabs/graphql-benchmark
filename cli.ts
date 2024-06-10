@@ -15,6 +15,7 @@ export interface Arguments {
   description: string | undefined;
   replay: boolean;
   manual: boolean;
+  outputFileName: string | undefined;
 }
 
 // Setup yargs
@@ -64,6 +65,10 @@ const argv = yargs(hideBin(process.argv))
     describe: "Provide a json file of manually crafted filters to benchmark.",
     type: "boolean",
     default: false,
+  })
+  .option("outputFileName", {
+    describe: "The name of the output file",
+    type: "string",
   })
   .help("h")
   .alias("h", "help")

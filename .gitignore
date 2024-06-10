@@ -1,5 +1,5 @@
 node_modules
-*.json
+experiments/*.json
 experiments
 analysis
 write_to_db.py

@@ -9,7 +9,7 @@ export const CoinsByType = graphql(`
     $after: String
     $last: Int
     $before: String
-    $type: String = "0x2::sui::SUI"
+    $type: String
   ) {
     coins(
       first: $first
