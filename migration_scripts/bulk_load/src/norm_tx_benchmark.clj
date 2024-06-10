@@ -1,6 +1,5 @@
 (ns norm-tx-benchmark
-  (:require [combinations :refer [&& || |?]]
-            [db]
+  (:require [db]
             [hex :refer [hex->bytes]]
             [norm-tx
              :refer [+transactions+
