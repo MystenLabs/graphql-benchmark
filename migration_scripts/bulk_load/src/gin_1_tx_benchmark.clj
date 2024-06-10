@@ -42,7 +42,7 @@
           (conj (<text (str (hex/normalize pkg) "::" mod "::" fun) :functions))
 
           (and pkg mod (not fun))
-          (conj (<text (str (hex/normalize pkg) "::" mod)) :modules)
+          (conj (<text (str (hex/normalize pkg) "::" mod) :modules))
 
           (and pkg (not mod) (not fun))
           (conj [<at [:array [(hex->bytes pkg)]] :packages])
