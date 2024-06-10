@@ -1,6 +1,5 @@
 (ns gin-1-tx-benchmark
-  (:require [combinations :refer [&& || |?]]
-            [db]
+  (:require [db]
             [hex :refer [hex->bytes]]
             [gin-1-tx :refer [+transactions+ +tx-digests+ +cp-tx+]]
             [alphabase.base58 :as b58]
