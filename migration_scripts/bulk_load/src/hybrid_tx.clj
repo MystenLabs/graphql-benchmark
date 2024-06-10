@@ -7,7 +7,7 @@
 
 ;; # Hybrid Transactions Schema
 ;;
-;; Proposed new schema for the transactios table merging ideas from the GIN and
+;; Proposed new schema for the transactions table merging ideas from the GIN and
 ;; normalized schemas:
 ;;
 ;; - The `transactions` table is partitioned by just `tx_sequence_number`.
@@ -34,20 +34,19 @@
 ;;   We split these into two steps to give postgres less of a chance to
 ;;   incorrectly optimize the join between the two tables.
 ;;
-;; - We also introduce two denormalized tables: `transactions-filter` and
-;;   `transactions-filter-gin` which both contain the combination of all filters
-;;   into one denormalized table (but not the transaction contents). These will
-;;   be used to test whether it is more efficient to implement compound filters
-;;   as:
+;; - We also introduce two denormalized tables: `tx-filters` and
+;;   `tx-filters-gin` which both contain the combination of all filters into one
+;;   denormalized table (but not the transaction contents). These will be used
+;;   to test whether it is more efficient to implement compound filters as:
 ;;
 ;;   - A sequential scan over a filter table.
 ;;   - Bitmap index scans over a GIN on the filter table.
 ;;   - Joins over the atomic filter tables.
 ;;
 ;;   In particular, we want to ensure that compound filters work for fairly
-;;   large ranges of transaction sequence numbers, in cases where they contain
-;;   enough results, and can be restricted to some reasonable bound (a week's
-;;   worth of transactions) when they
+;;   large ranges of transaction sequence numbers, so that we can avoid timeouts
+;;   by requiring users to set a limit on the number of transaction sequence
+;;   numbers that can be scanned in the case of such queries.
 
 ;; Table Names ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
