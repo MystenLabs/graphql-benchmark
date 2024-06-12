@@ -2,7 +2,8 @@
   (:require [clojure.data.json :as json]
             [clojure.string :as s]
             [honey.sql.protocols :refer [InlineValue]]
-            [next.jdbc :as jdbc])
+            [next.jdbc :as jdbc]
+            [pool :refer [->Pool worker]])
   (:import [org.postgresql.util PSQLException]))
 
 (defn- env [var] (System/getenv var))
@@ -26,6 +27,35 @@
   should expect a single string parameter, the table's name."
   [db name template]
   (jdbc/execute! db [(format template name)]))
+
+(defn bounds
+  "Get lower and upper-bounds of `field` in partitioned `table`.
+
+  `parts` is a sequence of partition identifiers. `table` is a
+  function that accepts a partition identifier and returns the table
+  name for that partition, and `field` is the field whose bounds are
+  being sought in each partition.
+
+  Bounds are appended to a `:bounds` key on the signal map returned
+  from this function."
+  [db parts logger table field]
+  (->Pool :name    "fetch-bounds"
+          :logger   logger
+          :workers (Math/clamp (long (count parts)) 4 20)
+          :pending (for [part parts] {:part part})
+
+          :impl
+          (worker {:keys [part]}
+                  (->> [(format "SELECT MIN(%1$s), MAX(%1$s) FROM %2$s"
+                                field (table part))]
+                       (jdbc/execute-one! db)))
+
+          :finalize
+          (fn [{:keys [status part min max]} signals]
+            (when (= :success status)
+              (swap! signals update :bounds (fnil conj [])
+                     {:part part :lo min :hi (inc max)})
+              nil))))
 
 (defn max-checkpoint-in
   "Get the maxmium checkpoint sequence number in the given table."
