@@ -312,37 +312,6 @@
           (worker {:keys [table]}
             (db/with-table! db table "DROP TABLE IF EXISTS %s") nil)))
 
-(defn transactions:transaction-bounds!
-  "Transaction sequence number bounds for transaction partitions.
-
-  Each interval has an inclusive `:lo`wer bound and an exclusive upper
-  bound -- `:hi` -- (measured in transaction sequence numbers), as
-  well as the `part`ition of `transactions` it maps to.
-
-  Bounds are appended to a `:bounds` key on the signal map returned
-  from this function."
-  [db lo hi logger & {:keys [retry]}]
-  (->Pool :name    "fetch-bounds"
-          :logger   logger
-          :workers (Math/clamp (- hi lo) 4 20)
-          :pending (or retry (for [part (range lo hi)] {:part part}))
-
-          :impl
-          (worker {:keys [part]}
-            (->> "SELECT
-                      MIN(tx_sequence_number),
-                      MAX(tx_sequence_number)
-                  FROM %s"
-                 (db/with-table! db (str "transactions_partition_" part))
-                 (first)))
-
-          :finalize
-          (fn [{:keys [status part min max]} signals]
-            (when (= :success status)
-              (swap! signals update :bounds (fnil conj [])
-                     {:part part :lo min :hi (inc max)})
-              nil))))
-
 (defn bounds->batches
   "Convert transaction sequence number bounds to batches of work.
 
@@ -406,37 +375,6 @@
                      (if (starts-with? from "transactions")
                        :transactions (keyword from))
                      (fnil + 0) updated)
-              nil))))
-
-(defn transactions:checkpoint-bounds
-  "Checkpoint sequence number bounds for transaction partitions.
-
-  Each interval has an inclusive `:lo`wer bound and an exclusive upper
-  bound -- `:hi` -- (measured in checkpoint sequence numbers), as well
-  as the `part`ition of `transactions` it maps to.
-
-  Bounds are appended to a `:bounds` key on the signal map returned
-  from this function."
-  [db lo hi logger & {:keys [retry]}]
-  (->Pool :name    "fetch-checkpoints"
-          :logger   logger
-          :workers (Math/clamp (- hi lo) 4 20)
-          :pending (or retry (for [part (range lo hi)] {:part part}))
-
-          :impl
-          (worker {:keys [part]}
-            (->> "SELECT
-                      MIN(checkpoint_sequence_number),
-                      MAX(checkpoint_sequence_number)
-                  FROM %s"
-                 (db/with-table! db (str "transactions_partition_" part))
-                 (first)))
-
-          :finalize
-          (fn [{:keys [status part min max]} signals]
-            (when (= :success status)
-              (swap! signals update :bounds (fnil conj [])
-                     {:part part :lo min :hi (inc max)})
               nil))))
 
 (defn transactions:index-and-attach-partitions!
