@@ -1,5 +1,5 @@
 (ns tx-filters
-  (:require [combinations :refer [&& || |? *?]]))
+  (:require [combinations :refer [&& || |?]]))
 
 ;; Transaction Filters ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
