@@ -173,21 +173,11 @@
   (select-tx params lo hi +tx-digests+
              [:in :tx-digest (map b58/decode ids)]))
 
-(defn- only-ids
-  "Modify `query` to only pick transactions whose digests are in `ids`."
-  [query ids]
-  (update query :join (fnil conj [])
-          [{:select [:tx-sequence-number]
-            :from (keyword +tx-digests+)
-            :where [:in :tx-digest (map b58/decode ids)]}
-           (keyword +tx-digests+)]
-          [:using :tx-sequence-number]))
-
 (defn hybrid-tx-filter
   [compound-filter
-   & {:as params :keys [cp-< cp-= cp-> kind sign ids inline pretty]}]
+   & {:as params :keys [cp-< cp-= cp-> kind sign inline pretty]}]
   (let [additional
-        #{:sign :kind :ids
+        #{:sign :kind
           :cp-< :cp-= :cp->
           :after :before :scan-limit
           :inline :pretty}
@@ -216,10 +206,7 @@
 
            :always (assoc :order-by [[:tx-sequence-number :asc]])
            :always (assoc :limit 52)
-           :always (format))
-
-        finalize
-        #(cond-> % ids (only-ids ids) :always (bounded))]
+           :always (format))]
 
     (cond (not (consistent? params))
           ;; A query that will always be empty
@@ -228,19 +215,19 @@
                    :where false})
 
           (just :pkg)
-          (finalize (select-pkg params lo hi))
+          (bounded (select-pkg params lo hi))
 
           (just :pkg :mod)
-          (finalize (select-mod params lo hi))
+          (bounded (select-mod params lo hi))
 
           (just :pkg :mod :fun)
-          (finalize (select-fun params lo hi))
+          (bounded (select-fun params lo hi))
 
           ;; TODO: We can save a little space by only tracking the programmable
           ;; transactions, and using a tx-senders query with sender set to `0x0`
           ;; to detect system transactions.
           (and (just :kind) (not sign))
-          (finalize (select-kind params lo hi))
+          (bounded (select-kind params lo hi))
 
           ;; Failing the previous condition implies that if we are
           ;; a `(just :kind)` query, `sign` is set. And falling through the
@@ -248,16 +235,16 @@
           ;; kind. In this case, the `kind` filter is subsumed by the `sign`
           ;; filter.
           (or (just :kind) (just :sign))
-          (finalize (select-sender params lo hi))
+          (bounded (select-sender params lo hi))
 
           (just :recv)
-          (finalize (select-recipient params lo hi))
+          (bounded (select-recipient params lo hi))
 
           (just :input)
-          (finalize (select-input params lo hi))
+          (bounded (select-input params lo hi))
 
           (just :changed)
-          (finalize (select-changed params lo hi))
+          (bounded (select-changed params lo hi))
 
           (just :ids)
           (bounded (select-ids params lo hi))
@@ -294,6 +281,7 @@
            kind           ;; transaction kind
            sign recv      ;; addresses
            input changed  ;; objects
+           ids            ;; transaction ids
            ]}
    lo hi]
   (let [sub-queries
@@ -314,6 +302,7 @@
           ;; into each select. Assertion below guarantees at least one select
           ;; used.
 
+          ids     (conj (select-ids params lo hi))
           recv    (conj (select-recipient params lo hi))
           input   (conj (select-input params lo hi))
           changed (conj (select-changed params lo hi)))
@@ -343,6 +332,7 @@
            cp-< cp-= cp-> ;; checkpoint
            sign recv      ;; addresses
            input changed  ;; objects
+           ids            ;; transaction ids
            after before   ;; pagination
            ]}
    lo hi]
@@ -385,47 +375,55 @@
         tx-lo (bounds :greatest :min after)
         tx-hi (bounds :least    :max before)]
     (assert (consistent? params))
-    {:select [:tx-sequence-number]
-     :from [(keyword denorm)]
+    (cond->
+        {:select [:tx-sequence-number]
+         :from [(keyword denorm)]
 
-     :where
-     (cond-> [:and]
-       (and pkg mod fun)
-       (conj (<text (str (hex/normalize pkg) "::" mod "::" fun) :functions))
+         :where
+         (cond-> [:and]
+           (and pkg mod fun)
+           (conj (<text (str (hex/normalize pkg) "::" mod "::" fun) :functions))
 
-       (and pkg mod (not fun))
-       (conj (<text (str (hex/normalize pkg) "::" mod) :modules))
+           (and pkg mod (not fun))
+           (conj (<text (str (hex/normalize pkg) "::" mod) :modules))
 
-       (and pkg (not mod) (not fun))
-       (conj (<byte pkg :packages))
+           (and pkg (not mod) (not fun))
+           (conj (<byte pkg :packages))
 
-       (and (not sign) (= kind :system))
-       (conj [:= :sender sys-addr:bytes])
+           (and (not sign) (= kind :system))
+           (conj [:= :sender sys-addr:bytes])
 
-       (and (not sign) (= kind :programmable))
-       (conj [:not= :sender sys-addr:bytes])
+           (and (not sign) (= kind :programmable))
+           (conj [:not= :sender sys-addr:bytes])
 
-       sign (conj [:= :sender (hex->bytes sign)])
-       recv (conj (<byte recv :recipients))
+           sign (conj [:= :sender (hex->bytes sign)])
+           recv (conj (<byte recv :recipients))
 
-       input   (conj (<byte input :inputs))
-       changed (conj (<byte changed :changed))
+           input   (conj (<byte input :inputs))
+           changed (conj (<byte changed :changed))
 
-       cp-=
-       (conj [:between :tx-sequence-number
-              (from-cp-tx cp-= :min-tx-sequence-number)
-              (from-cp-tx cp-= :max-tx-sequence-number)])
+           cp-=
+           (conj [:between :tx-sequence-number
+                  (from-cp-tx cp-= :min-tx-sequence-number)
+                  (from-cp-tx cp-= :max-tx-sequence-number)])
 
-       (and (not cp-=) cp-<)
-       (conj [:< :tx-sequence-number
-              (from-cp-tx cp-< :min-tx-sequence-number)])
+           (and (not cp-=) cp-<)
+           (conj [:< :tx-sequence-number
+                  (from-cp-tx cp-< :min-tx-sequence-number)])
 
-       (and (not cp-=) cp->)
-       (conj [:> :tx-sequence-number
-              (from-cp-tx cp-> :max-tx-sequence-number)])
+           (and (not cp-=) cp->)
+           (conj [:> :tx-sequence-number
+                  (from-cp-tx cp-> :max-tx-sequence-number)])
 
-       (< 1 (count tx-lo)) (conj [:>= :tx-sequence-number tx-lo])
-       (< 1 (count tx-hi)) (conj [:<= :tx-sequence-number tx-hi]))}))
+           (< 1 (count tx-lo)) (conj [:>= :tx-sequence-number tx-lo])
+           (< 1 (count tx-hi)) (conj [:<= :tx-sequence-number tx-hi]))}
+
+      ids
+      (assoc :join [[{:select [:tx-sequence-number]
+                      :from [(keyword +tx-digests+)]
+                      :where [:in :tx-digest (map b58/decode ids)]}
+                     (keyword +tx-digests+)]
+                    [:using :tx-sequence-number]]))))
 
 ;; Entrypoints ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
