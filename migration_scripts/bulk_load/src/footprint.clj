@@ -7,12 +7,325 @@
 
 ;; Columns ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(def all-columns
+  "These are all the columns in the current schema."
+  #{:chain-identifier/checkpoint-digest
+
+    :checkpoints/sequence-number
+    :checkpoints/checkpoint-digest
+    :checkpoints/epoch
+    :checkpoints/network-total-transactions
+    :checkpoints/previous-checkpoint-digest
+    :checkpoints/end-of-epoch
+    :checkpoints/tx-digests
+    :checkpoints/timestamp-ms
+    :checkpoints/total-gas-cost
+    :checkpoints/computation-cost
+    :checkpoints/storage-cost
+    :checkpoints/storage-rebate
+    :checkpoints/non-refundable-storage-fee
+    :checkpoints/checkpoint-commitments
+    :checkpoints/validator-signature
+    :checkpoints/end-of-epoch-data
+    :checkpoints/min-tx-sequence-number
+    :checkpoints/max-tx-sequence-number
+
+    :display/object-type
+    :display/id
+    :display/version
+    :display/bcs
+
+    :epochs/epoch
+    :epochs/first-checkpoint-id
+    :epochs/epoch-start-timestamp
+    :epochs/reference-gas-price
+    :epochs/protocol-version
+    :epochs/total-stake
+    :epochs/storage-fund-balance
+    :epochs/system-state
+    :epochs/epoch-total-transactions
+    :epochs/last-checkpoint-id
+    :epochs/epoch-end-timestamp
+    :epochs/storage-fund-reinvestment
+    :epochs/storage-charge
+    :epochs/storage-rebate
+    :epochs/stake-subsidy-amount
+    :epochs/total-gas-fees
+    :epochs/total-stake-rewards-distributed
+    :epochs/leftover-storage-fund-inflow
+    :epochs/epoch-commitments
+
+    :events/tx-sequence-number
+    :events/event-sequence-number
+    :events/transaction-digest
+    :events/senders
+    :events/package
+    :events/module
+    :events/event-type
+    :events/timestamp-ms
+    :events/bcs
+
+    :event-emit-package/package
+    :event-emit-package/tx-sequence-number
+    :event-emit-package/event-sequence-number
+    :event-emit-package/sender
+
+    :event-emit-module/package
+    :event-emit-module/module
+    :event-emit-module/tx-sequence-number
+    :event-emit-module/event-sequence-number
+    :event-emit-module/sender
+
+    :event-senders/sender
+    :event-senders/tx-sequence-number
+    :event-senders/event-sequence-number
+
+    :event-struct-package/package
+    :event-struct-package/tx-sequence-number
+    :event-struct-package/event-sequence-number
+    :event-struct-package/sender
+
+    :event-struct-module/package
+    :event-struct-module/module
+    :event-struct-module/tx-sequence-number
+    :event-struct-module/event-sequence-number
+    :event-struct-module/sender
+
+    :event-struct-name/package
+    :event-struct-name/module
+    :event-struct-name/type-name
+    :event-struct-name/tx-sequence-number
+    :event-struct-name/event-sequence-number
+    :event-struct-name/sender
+
+    :event-struct-instantiation/package
+    :event-struct-instantiation/module
+    :event-struct-instantiation/type-instantiation
+    :event-struct-instantiation/tx-sequence-number
+    :event-struct-instantiation/event-sequence-number
+    :event-struct-instantiation/sender
+
+    :objects/object-id
+    :objects/object-version
+    :objects/object-digest
+    :objects/checkpoint-sequence-number
+    :objects/owner-type
+    :objects/owner-id
+    :objects/object-type
+    :objects/object-type-package
+    :objects/object-type-module
+    :objects/object-type-name
+    :objects/serialized-object
+    :objects/coin-type
+    :objects/coin-balance
+    :objects/df-kind
+    :objects/df-name
+    :objects/df-object-type
+    :objects/df-object-id
+
+    :objects-history/object-id
+    :objects-history/object-version
+    :objects-history/object-status
+    :objects-history/object-digest
+    :objects-history/checkpoint-sequence-number
+    :objects-history/owner-type
+    :objects-history/owner-id
+    :objects-history/object-type
+    :objects-history/object-type-package
+    :objects-history/object-type-module
+    :objects-history/object-type-name
+    :objects-history/serialized-object
+    :objects-history/coin-type
+    :objects-history/coin-balance
+    :objects-history/df-kind
+    :objects-history/df-name
+    :objects-history/df-object-type
+    :objects-history/df-object-id
+
+    :objects-snapshot/object-id
+    :objects-snapshot/object-version
+    :objects-snapshot/object-status
+    :objects-snapshot/object-digest
+    :objects-snapshot/checkpoint-sequence-number
+    :objects-snapshot/owner-type
+    :objects-snapshot/owner-id
+    :objects-snapshot/object-type
+    :objects-snapshot/object-type-package
+    :objects-snapshot/object-type-module
+    :objects-snapshot/object-type-name
+    :objects-snapshot/serialized-object
+    :objects-snapshot/coin-type
+    :objects-snapshot/coin-balance
+    :objects-snapshot/df-kind
+    :objects-snapshot/df-name
+    :objects-snapshot/df-object-type
+    :objects-snapshot/df-object-id
+
+    :objects-version/object-id
+    :objects-version/object-version
+    :objects-version/cp-sequence-number
+
+    :packages/package-id
+    :packages/original-id
+    :packages/package-version
+    :packages/move-package
+    :packages/checkpoint-sequence-number
+
+    :transactions/tx-sequence-number
+    :transactions/transaction-digest
+    :transactions/raw-transaction
+    :transactions/raw-effects
+    :transactions/checkpoint-sequence-number
+    :transactions/timestamp-ms
+    :transactions/object-changes
+    :transactions/balance-changes
+    :transactions/events
+    :transactions/transaction-kind
+    :transactions/success-command-count
+
+    :tx-calls-pkg/tx-sequence-number
+    :tx-calls-pkg/package
+    :tx-calls-pkg/sender
+
+    :tx-calls-mod/tx-sequence-number
+    :tx-calls-mod/package
+    :tx-calls-mod/module
+    :tx-calls-mod/sender
+
+    :tx-calls-fun/tx-sequence-number
+    :tx-calls-fun/package
+    :tx-calls-fun/module
+    :tx-calls-fun/func
+    :tx-calls-fun/sender
+
+    :tx-changed-objects/tx-sequence-number
+    :tx-changed-objects/object-id
+    :tx-changed-objects/sender
+
+    :tx-digests/tx-digest
+    :tx-digests/tx-sequence-number
+
+    :tx-input-objects/tx-sequence-number
+    :tx-input-objects/object-id
+    :tx-input-objects/sender
+
+    :tx-kinds/tx-sequence-number
+    :tx-kinds/tx-kind
+
+    :tx-recipients/tx-sequence-number
+    :tx-recipients/recipient
+    :tx-recipients/sender
+
+    :tx-senders/tx-sequence-number
+    :tx-senders/sender})
+
+
+(def kv-columns
+  "Columns that could be moved to a blob store.
+
+  Columns whose names end with a `*` can be omitted with the
+  introduction of a blob store. Those that end in a `+` must be
+  duplicated, and plain columns are moved."
+  #{:checkpoints/sequence-number+
+    :checkpoints/epoch
+    :checkpoints/previous-checkpoint-digest
+    :checkpoints/end-of-epoch
+    :checkpoints/timestamp-ms
+    :checkpoints/total-gas-cost
+    :checkpoints/computation-cost
+    :checkpoints/storage-cost
+    :checkpoints/storage-rebate
+    :checkpoints/non-refundable-storage-fee
+    :checkpoints/checkpoint-commitments
+    :checkpoints/validator-signature
+    :checkpoints/end-of-epoch-data
+
+    :display/bcs*
+
+    :epochs/epoch
+    :epochs/first-checkpoint-id
+    :epochs/epoch-start-timestamp
+    :epochs/reference-gas-price
+    :epochs/protocol-version
+    :epochs/total-stake
+    :epochs/storage-fund-balance
+    :epochs/system-state
+    :epochs/epoch-total-transactions
+    :epochs/last-checkpoint-id
+    :epochs/epoch-end-timestamp
+    :epochs/storage-fund-reinvestment
+    :epochs/storage-charge
+    :epochs/storage-rebate
+    :epochs/stake-subsidy-amount
+    :epochs/total-gas-fees
+    :epochs/total-stake-rewards-distributed
+    :epochs/leftover-storage-fund-inflow
+    :epochs/epoch-commitments
+
+    :events/tx-sequence-number
+    :events/event-sequence-number
+    :events/timestamp-ms
+    :events/bcs
+
+    :objects/object-id+
+    :objects/object-version+
+    :objects/serialized-object*
+
+    :objects-history/object-id+
+    :objects-history/object-version+
+    :objects-history/serialized-object
+
+    :objects-snapshot/object-id+
+    :objects-snapshot/object-version+
+    :objects-snapshot/serialized-object*
+
+    :objects-version/object-id*
+    :objects-version/object-version*
+    :objects-version/cp-sequence-number*
+
+    :packages/move-package*
+
+    :transactions/tx-sequence-number
+    :transactions/raw-transaction
+    :transactions/raw-effects
+    :transactions/timestamp-ms})
+
+(defn undecorate
+  "Remove any markings suffixing the column name"
+  [column]
+  (let [tab (namespace column)
+        col (name column)]
+    (keyword
+     tab
+     (if (or (s/ends-with? col "*")
+             (s/ends-with? col "+"))
+       (subs col 0 (dec (count col)))
+       col))))
 
 (defn keyword->sql [ident]
   (s/replace (name ident) \- \_))
 
 (defn sql->keyword [ident]
   (keyword (s/replace ident \_ \-)))
+
+(defn tables
+  "Get the table names from a sequence of columns.
+
+  Expects columns to be given as namespace-qualified clojure keywords."
+  [columns]
+  (->> columns (map namespace) (map keyword->sql) (into #{})))
+
+;; Validation ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn validate-columns
+  "Test that all the columns are from the `all-columns` set."
+  [columns]
+  (let [unknown (set/difference columns all-columns)]
+    (when (seq unknown)
+      (throw (ex-info (str "Unknown columns")
+                      {:columns unknown})))))
+
+(->> kv-columns (map undecorate) (into #{}) (validate-columns))
 
 ;; Table sizes ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -181,10 +494,12 @@
       (recur (/ sz 1024) (rest units)))))
 
 (defn footprint
-  "Calculate the total footprint given the per-table breakdown."
+  "Calculate the total footprint in the DB given the per-table breakdown.
+
+  Ignores size attributed to the KV store, if there is one."
   [tables]
   (->> tables
-     (mapcat (fn [[_ stats]] stats))
+     (mapcat (fn [[table stats]] (when (not= :kv-store table) stats)))
      (map (fn [{:keys [pkey self idx toast]}]
             (+ self (or pkey 0) (or idx 0) (or toast 0))))
      (reduce +)))
@@ -311,3 +626,90 @@
              :tx-kinds
              :tx-recipients
              :tx-senders])))
+
+;; KV Store ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn offloaded-to-kv-store
+  "Simulate offloading blob data to the key-value store.
+
+  - Columns that have been marked to be moved into a key-value
+    store (according to `kv-columns`) have their sizes removed from
+    their corresponding table and gathered into a special `:kv-store`
+    entry in the sizes mapping.
+
+  - It's assumed that if a table has columns to be moved to a KV
+    store, all its TOAST-ed values belong to those columns, and will
+    have their size re-attributed to the `:kv-store`.
+
+  - It's also assumed that these columns will not impact indices and
+    therefore won't change index or primary key size, unless the entire
+    table can be moved to key-value store."
+  [tables]
+  (let [kv-size (atom 0)
+
+        ;; Indicate whether the column should be moved to the KV
+        ;; store (return `:mv`), removed from RDBMS (`:rm`),
+        ;; copied (`:cp`), or is not affected by offloading (`nil`).
+        kv-column
+        (fn [table col]
+          (let [fq #(keyword (name table) (str (name col) %))]
+            (cond
+              (kv-columns (fq ""))  :mv
+              (kv-columns (fq "*")) :rm
+              (kv-columns (fq "+")) :cp)))
+
+        ;; Accepts a per-table statistic, and tries to extract
+        ;; key-value data from it. Returns the updated statistic, and
+        ;; updates `kv-size` with the size that should be attributed
+        ;; to the key-value store.
+        extract-kv
+        (fn [table {:keys [cols tuples toast self] :as stat}]
+          (cond
+            ;; If we don't have column or tuple information or it
+            ;; indicates that there are no key-value columns in this
+            ;; table, skip it.
+            (or (not cols) (not tuples)) stat
+            (not-any? #(kv-column table %) (keys cols)) stat
+
+            :else
+            ;; Assume the "TOAST" table is offloaded, and then loop
+            ;; over the remaining columns.
+            (do (swap! kv-size + (or toast 0))
+                (loop [cols (seq cols) stat (dissoc stat :toast)]
+                  (if-let [[col width] (first cols)]
+                    (let [weight (* tuples width)
+
+                          credit-kv!
+                          #(swap! kv-size + weight)
+
+                          debit-col
+                          #(-> stat
+                               (update :self - weight)
+                               (update :cols dissoc col))]
+                      (case (kv-column table col)
+                        :mv (do (credit-kv!) (recur (rest cols) (debit-col)))
+                        :rm (recur (rest cols) (debit-col))
+                        :cp (do (credit-kv!) (recur (rest cols) stat))
+                        nil (recur (rest cols) stat)))
+
+                    ;; If no columns remain, assume the entire table has been
+                    ;; offloaded, and return `nil`.
+                    (when (seq (:cols stat)) stat))))))
+
+        extract-kvs
+        (fn [table stats]
+          (->> stats
+               (map #(extract-kv table %))
+               (filter some?)
+               (into [])))
+
+        extracted
+        (into {} (for [[table stats] tables
+                       :let [extract (extract-kvs table stats)]
+                       :when (seq extract)]
+                   [table extract]))]
+
+    ;; Materialize `extracted` into a dictionary first, so `kv-size`
+    ;; holds the estimated key-value store size (`for` produces a lazy
+    ;; sequence).
+    (assoc extracted :kv-store [{:self @kv-size}])))
