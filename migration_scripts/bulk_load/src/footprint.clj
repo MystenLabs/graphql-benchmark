@@ -1153,6 +1153,42 @@
       (update $ :transactions strip-idx)
       (dissoc $ :objects))))
 
+;; Removing Filters ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn rm-event-emit
+  "Remove the ability to filter events by emitting module."
+  [tables] (dissoc tables :event-emit-package :event-emit-module))
+
+(defn rm-event-senders
+  "Remove the ability to filter events by transaction sender."
+  [tables] (dissoc tables :event-senders))
+
+(defn rm-event-struct
+  "Remove the ability to filter events by their type."
+  [tables]
+  (dissoc tables
+          :event-struct-package :event-struct-module
+          :event-struct-name :event-struct-instantiation))
+
+(defn rm-tx-calls
+  "Remove the ability to filter transactions by caller."
+  [tables] (dissoc tables :tx-calls-pkg :tx-calls-mod :tx-calls-fun))
+
+(defn rm-tx-changed-objects
+  "Remove the ability to filter transactions by changed object."
+  [tables] (dissoc tables :tx-changed-objects))
+
+(defn rm-tx-input-objects
+  "Remove the ability to filter tranactions by input objects."
+  [tables] (dissoc tables :tx-input-objects))
+
+(defn rm-tx-kinds
+  [tables] (dissoc tables :tx-kinds))
+
+(defn rm-tx-recipients
+  "Remove the ability to filter transactions by recipient."
+  [tables] (dissoc tables :tx-recipients))
+
 ;; Optimization entrypoint ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn optimize
