@@ -820,6 +820,26 @@
          [t rs])
        (into {})))
 
+(defn remove-column
+  "Attempts to remove a single column from statistics.
+
+  Leaves the statistics table untouched if it does not contain enough
+  information to perform the operation. (It may not have a record of
+  that column, or any columns, or may not have a recorded size, or
+  number of tuples).
+
+  Otherwise, returns a new statistics map with the self size adjusted
+  as if that column had been removed, and the column itself removed
+  from the column stats."
+  [col {:keys [self cols tuples] :as stat}]
+  (if-not (and self cols tuples (not (neg? tuples)))
+    stat
+    (if-let [{:keys [width null]} (cols col)]
+      (-> stat
+          (update :self - (* width (- 1 null) tuples) (* null tuples))
+          (update :cols dissoc col))
+      stat)))
+
 ;; Clustered Tables ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn clustered
@@ -1126,24 +1146,14 @@
     GraphQL."
   [tables]
   (let [check-gql
-        (fn [table {:keys [tuples self] :as stat} [col {:keys [width]}]]
-          (if (or (not tuples) (neg? tuples) (not self)
-                  (graphql-columns (fq-name table col)))
-            ;; Leave the statistic unchanged if there is no tuple
-            ;; information, self size, or we notice that this column
-            ;; is used by GraphQL.
-            stat
-
-            ;; Otherwise, remove its estimated contribution from the
-            ;; self size, remove the column from the column width info
-            ;; as well.
-            (-> stat
-                (update :self - (* tuples width))
-                (update :cols dissoc col))))
+        (fn [table stat col]
+          (cond->> stat
+            (not (graphql-columns (fq-name table col)))
+            (remove-column col)))
 
         rm-not-gql
         (fn [table stat]
-          (reduce (partial check-gql table) stat (:cols stat)))
+          (reduce (partial check-gql table) stat (keys (:cols stat))))
 
         strip-idx
         (partial mapv #(dissoc % :idx))]
@@ -1188,6 +1198,20 @@
 (defn rm-tx-recipients
   "Remove the ability to filter transactions by recipient."
   [tables] (dissoc tables :tx-recipients))
+
+(defn rm-obj-types
+  "Remove the ability to filter objects by type."
+  [tables]
+  (let [rm-type-cols
+        (partial
+         mapv #(->> %
+                    (remove-column :object-type-package)
+                    (remove-column :object-type-module)
+                    (remove-column :object-type-name)))]
+    (-> tables
+        (update :objects rm-type-cols)
+        (update :objects-history rm-type-cols)
+        (update :objects-snapshot rm-type-cols))))
 
 ;; Optimization entrypoint ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
