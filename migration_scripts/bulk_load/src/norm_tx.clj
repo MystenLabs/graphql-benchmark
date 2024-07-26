@@ -85,7 +85,7 @@
 (defn transactions:constrain!
   "Add constraints to partition `n` of the `transactions` table.
 
-  `lo` and `hi` are the inclusive and exclusive bounds on transasction
+  `lo` and `hi` are the inclusive and exclusive bounds on transaction
   sequence numbers in the partition."
   [db n lo hi]
   (->> [(format
