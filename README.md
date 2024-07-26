@@ -68,4 +68,6 @@ pnpm ts-node cli.ts --suite transaction-block --params-file-path manual.json --u
 
 # Performance Parity Checks (WIP)
 
-`./run_performance_parity.sh` will kick off the benchmarks stored in `evaluation/parity/benchmarks` and write to `experiments/evaluation/parity/benchmarks/uniqueTimestamp/jsonFile.json`
+`./run_performance_parity.sh` will kick off the benchmarks stored in `evaluation/parity/benchmarks` and write to `experiments/evaluation/parity/benchmarks/uniqueTimestamp/suite/jsonFile.json`
+
+Within the top-level `evaluation/parity/benchmarks`, we have dirs representing suites for `balance`, `coin`, and so on. The script will create a corresponding dir in `experiments/evaluation/parity/benchmarks/timestamp`, where the files nested in that path will mirror the structure of the original suite.

@@ -9,6 +9,44 @@ generate_timestamp() {
   echo "$timestamp"
 }
 
+# Parse command-line arguments
+url=""
+limit=""
+num_pages=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --url)
+      url="$2"
+      shift 2
+      ;;
+    --limit)
+      limit="$2"
+      shift 2
+      ;;
+    --numPages)
+      num_pages="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+  esac
+done
+
+# Construct additional parameters string
+additional_params=""
+if [ -n "$url" ]; then
+  additional_params+=" --url $url"
+fi
+if [ -n "$limit" ]; then
+  additional_params+=" --limit $limit"
+fi
+if [ -n "$num_pages" ]; then
+  additional_params+=" --numPages $num_pages"
+fi
+
 timestamp=$(generate_timestamp)
 
 # Loop through each subdirectory in the base directory
@@ -49,7 +87,7 @@ for suite in balance coin dynamic-field object transaction-block; do
         output_file_name="$base_dir/$timestamp/$suite/$(basename "$json_file")"
 
         # Construct the command
-        cmd="pnpm ts-node cli.ts --suite $suite_name --params-file-path $json_file --replay --output-file-name $output_file_name"
+        cmd="pnpm ts-node cli.ts --suite $suite_name --params-file-path $json_file --replay --output-file-name $output_file_name $additional_params --numPages 10"
 
         # Print and execute the command
         echo "Executing: $cmd"
