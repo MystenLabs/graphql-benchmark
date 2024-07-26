@@ -108,6 +108,20 @@
         filter]
        (jdbc/execute! db)))
 
+(defn explain-print!
+  "EXPLAIN a query.
+
+  Prints the plain text output, or throws an error if the query fails
+  for some reason (including timeout)."
+  [db [query & binds]]
+  (let [QUERY-PLAN (keyword "QUERY PLAN")]
+    (as-> query %
+      (format "EXPLAIN %s" %)
+      (into [%] binds)
+      (jdbc/execute! db %)
+      (doseq [line %]
+        (println (QUERY-PLAN line))))))
+
 (defn explain-analyze-print!
   "EXPLAIN ANALYZE a query.
 
