@@ -61,6 +61,7 @@
   results."
   [{:keys [cp-< cp-= cp-> kind sign]}]
   (cond-> true
+    cp-<            (and (pos? cp-<))
     (and cp-> cp-<) (and (< (inc cp->) cp-<))
     (and cp-> cp-=) (and (< cp-> cp-=))
     (and cp-= cp-<) (and (< cp-= cp-<))
@@ -68,16 +69,59 @@
                             (= sys-addr:norm
                                (hex/normalize sign))))))
 
+(defn- bounds->query
+  "Create a query calculating a bound.
+
+  `agg` is the aggregation function to apply to the bounds, and
+  `bounds` are the queries calculating the individual components."
+  [col agg bounds]
+  (cond
+    (= 1 (count bounds))
+    {:select [[(first bounds) col]]}
+
+    (not (empty? bounds))
+    {:select [[(into [agg] bounds) col]]}))
+
+(defn- lower-bound
+  "Return a query computing the lowest transaction sequence number to scan."
+  [{:keys [cp-> cp-= after]}]
+  (bounds->query
+   :lo :greatest
+   (cond-> []
+     after (conj after)
+     cp-=  (conj (from-cp-tx cp-= :min-tx-sequence-number))
+
+     (and (not cp-=) cp->)
+     (conj (from-cp-tx cp-> [[:+ 1 :max-tx-sequence-number]])))))
+
+(defn- upper-bound
+  "Return a query computing the highest transaction sequence number to scan.
+
+  `lo` is a SQL expression that evaluates the lower bound, if there is one."
+  [lo {:keys [cp-< cp-= before scan-limit]}]
+  (bounds->query
+   :hi :least
+   (cond-> []
+     before (conj before)
+     cp-=  (conj (from-cp-tx cp-= :max-tx-sequence-number))
+
+     ;; Note that we only support forward scanning in the benchmark, but the
+     ;; production implementation needs to deal with backward scanning as
+     ;; well (if we are querying for the `last` transactions instead of the
+     ;; `first`).
+     scan-limit
+     (conj (if lo [:+ lo scan-limit] scan-limit))
+
+     (and (not cp-=) cp-< (pos? cp-<))
+     (conj (from-cp-tx cp-< [[:- 1 :min-tx-sequence-number]])))))
+
 (defn- select-tx
   "Select `tx-sequence-number`s from table `from`.
 
-  Filtered by condition `where`, and optionally applying sender,
-  checkpoint, or cursor bounds from `params`.
-
-  Assumes bounds are consistent and throws if this propery does not
-  hold."
-  [{:as params :keys [cp-< cp-= cp-> sign after before]} from where]
-  (assert (consistent? params))
+  Filtered by condition `where`, optionally applying a sender filter
+  from the filter params (first parameter), or transaction sequence
+  number `lo`wer or upperbounds (`hi`)."
+  [{:keys [sign]} lo hi from where]
   {:select [:tx-sequence-number]
    :from (keyword from)
    :where
@@ -85,78 +129,58 @@
      sign
      (conj [:= :sender (hex->bytes sign)])
 
-     cp-=
-     (conj [:between :tx-sequence-number
-            (from-cp-tx cp-= :min-tx-sequence-number)
-            (from-cp-tx cp-= :max-tx-sequence-number)])
+     lo (conj [:>= :tx-sequence-number lo])
+     hi (conj [:<= :tx-sequence-number hi]))})
 
-     (and (not cp-=) cp-<)
-     (conj [:< :tx-sequence-number
-            (from-cp-tx cp-< :min-tx-sequence-number)])
-
-     (and (not cp-=) cp->)
-     (conj [:> :tx-sequence-number
-            (from-cp-tx cp-> :max-tx-sequence-number)])
-
-     after  (conj [:>= :tx-sequence-number after])
-     before (conj [:<= :tx-sequence-number before]))})
-
-(defn- select-pkg [{:as params :keys [pkg]}]
-  (select-tx params +tx-calls-pkg+
+(defn- select-pkg [{:as params :keys [pkg]} lo hi]
+  (select-tx params lo hi +tx-calls-pkg+
              [:= :package (hex->bytes pkg)]))
 
-(defn- select-mod [{:as params :keys [pkg mod]}]
-  (select-tx params +tx-calls-mod+
+(defn- select-mod [{:as params :keys [pkg mod]} lo hi]
+  (select-tx params lo hi +tx-calls-mod+
              [:and
               [:= :package (hex->bytes pkg)]
               [:= :module mod]]))
 
-(defn- select-fun [{:as params :keys [pkg mod fun]}]
-  (select-tx params +tx-calls-fun+
+(defn- select-fun [{:as params :keys [pkg mod fun]} lo hi]
+  (select-tx params lo hi +tx-calls-fun+
              [:and
               [:= :package (hex->bytes pkg)]
               [:= :module mod]
               [:= :func fun]]))
 
-(defn- select-kind [{:as params :keys [kind]}]
-  (select-tx params +tx-kinds+
+(defn- select-kind [{:as params :keys [kind]} lo hi]
+  (select-tx params lo hi +tx-kinds+
              [:= :tx-kind ({:system 0 :programmable 1} kind)]))
 
-(defn- select-sender [{:as params :keys [sign]}]
+(defn- select-sender [params lo hi]
   ;; The filter on `sender` is added by `select-tx` already.
-  (select-tx params +tx-senders+ true))
+  (select-tx params lo hi +tx-senders+ true))
 
-(defn- select-recipient [{:as params :keys [recv]}]
-  (select-tx params +tx-recipients+
+(defn- select-recipient [{:as params :keys [recv]} lo hi]
+  (select-tx params lo hi +tx-recipients+
              [:= :recipient (hex->bytes recv)]))
 
-(defn- select-input [{:as params :keys [input]}]
-  (select-tx params +tx-input-objects+
+(defn- select-input [{:as params :keys [input]} lo hi]
+  (select-tx params lo hi +tx-input-objects+
              [:= :object-id (hex->bytes input)]))
 
-(defn- select-changed [{:as params :keys [changed]}]
-  (select-tx params +tx-changed-objects+
+(defn- select-changed [{:as params :keys [changed]} lo hi]
+  (select-tx params lo hi +tx-changed-objects+
              [:= :object-id (hex->bytes changed)]))
 
-(defn- select-ids [{:as params :keys [ids]}]
-  (select-tx params +tx-digests+
+(defn- select-ids [{:as params :keys [ids]} lo hi]
+  (select-tx params lo hi +tx-digests+
              [:in :tx-digest (map b58/decode ids)]))
-
-(defn- only-ids
-  "Modify `query` to only pick transactions whose digests are in `ids`."
-  [query ids]
-  (update query :join (fnil conj [])
-          [{:select [:tx-sequence-number]
-            :from (keyword +tx-digests+)
-            :where [:in :tx-digest (map b58/decode ids)]}
-           (keyword +tx-digests+)]
-          [:using :tx-sequence-number]))
 
 (defn hybrid-tx-filter
   [compound-filter
-   & {:as params :keys [cp-< cp-= cp-> kind sign ids inline pretty]}]
+   & {:as params :keys [cp-< cp-= cp-> kind sign inline pretty]}]
   (let [additional
-        #{:sign :kind :ids :cp-< :cp-= :cp-> :after :before :inline :pretty}
+        #{:sign :kind
+          :cp-< :cp-= :cp->
+          :after :before :scan-limit
+          :inline :pretty}
 
         just
         (fn [& ks] (and (every? (partial contains? params) ks)
@@ -164,13 +188,26 @@
                                 (keys (apply dissoc params ks)))
                         (or (not kind) sign (= '(:kind) ks))))
 
+        lo-cte (some->> (lower-bound params) (vector :tx-lo))
+        lo (some->> lo-cte first (hash-map :select :lo :from))
+
+        hi-cte (some->> (upper-bound lo params) (vector :tx-hi))
+        hi (some->> hi-cte first (hash-map :select :hi :from))
+
+        ctes (cond-> [] lo-cte (conj lo-cte) hi-cte (conj hi-cte))
+
         format
         #(sql/format % :inline inline :pretty pretty)
 
         bounded
-        #(-> (assoc % :order-by [[:tx-sequence-number :asc]] :limit 52)
-             (cond-> ids (only-ids ids))
-             format)]
+        #(cond-> %
+           (not (empty? ctes))
+           (assoc :with ctes)
+
+           :always (assoc :order-by [[:tx-sequence-number :asc]])
+           :always (assoc :limit 52)
+           :always (format))]
+
     (cond (not (consistent? params))
           ;; A query that will always be empty
           (format {:select [:tx-sequence-number]
@@ -178,19 +215,19 @@
                    :where false})
 
           (just :pkg)
-          (bounded (select-pkg params))
+          (bounded (select-pkg params lo hi))
 
           (just :pkg :mod)
-          (bounded (select-mod params))
+          (bounded (select-mod params lo hi))
 
           (just :pkg :mod :fun)
-          (bounded (select-fun params))
+          (bounded (select-fun params lo hi))
 
           ;; TODO: We can save a little space by only tracking the programmable
           ;; transactions, and using a tx-senders query with sender set to `0x0`
           ;; to detect system transactions.
           (and (just :kind) (not sign))
-          (bounded (select-kind params))
+          (bounded (select-kind params lo hi))
 
           ;; Failing the previous condition implies that if we are
           ;; a `(just :kind)` query, `sign` is set. And falling through the
@@ -198,21 +235,19 @@
           ;; kind. In this case, the `kind` filter is subsumed by the `sign`
           ;; filter.
           (or (just :kind) (just :sign))
-          (bounded (select-sender params))
+          (bounded (select-sender params lo hi))
 
           (just :recv)
-          (bounded (select-recipient params))
+          (bounded (select-recipient params lo hi))
 
           (just :input)
-          (bounded (select-input params))
+          (bounded (select-input params lo hi))
 
           (just :changed)
-          (bounded (select-changed params))
+          (bounded (select-changed params lo hi))
 
           (just :ids)
-          (-> (select-ids params)
-              (assoc :order-by [[:tx-sequence-number :asc]] :limit 52)
-              format)
+          (bounded (select-ids params lo hi))
 
           ;; At this point, if the filter isn't compound, we know that it only
           ;; imposes bounds on the transaction sequence numbers to be fetched.
@@ -235,7 +270,7 @@
                      cp-> (conj (from-cp-tx cp-> :max-tx-sequence-number)))})
 
           :else
-          (bounded (compound-filter params)))))
+          (bounded (compound-filter params lo hi)))))
 
 (defn compound-norm
   "Compound filters implemented using joins over normalized tables.
@@ -246,28 +281,31 @@
            kind           ;; transaction kind
            sign recv      ;; addresses
            input changed  ;; objects
-           ]}]
+           ids            ;; transaction ids
+           ]}
+   lo hi]
   (let [sub-queries
         (cond-> []
           (and pkg mod fun)
-          (conj (select-fun params))
+          (conj (select-fun params lo hi))
 
           (and pkg mod (not fun))
-          (conj (select-mod params))
+          (conj (select-mod params lo hi))
 
           (and pkg (not mod) (not fun))
-          (conj (select-pkg params))
+          (conj (select-pkg params lo hi))
 
           (and kind (not sign))
-          (conj (select-kind params))
+          (conj (select-kind params lo hi))
 
           ;; No explicit case for `sign` because sender filters are incorporated
           ;; into each select. Assertion below guarantees at least one select
           ;; used.
 
-          recv    (conj (select-recipient params))
-          input   (conj (select-input params))
-          changed (conj (select-changed params)))
+          ids     (conj (select-ids params lo hi))
+          recv    (conj (select-recipient params lo hi))
+          input   (conj (select-input params lo hi))
+          changed (conj (select-changed params lo hi)))
 
         aliased (fn [q] [q (:from q)])]
     (assert (consistent? params))
@@ -294,8 +332,10 @@
            cp-< cp-= cp-> ;; checkpoint
            sign recv      ;; addresses
            input changed  ;; objects
+           ids            ;; transaction ids
            after before   ;; pagination
-           ]}]
+           ]}
+   lo hi]
   (let [<text (fn [val col] [<at [:array [[:cast val :text]]] col])
         <byte (fn [val col] [<at [:array [(hex->bytes val)]] col])
 
@@ -309,73 +349,81 @@
             cursor (conj cursor)
 
             (and bounded? pkg mod fun)
-            (conj (aggregated agg (select-fun params)))
+            (conj (aggregated agg (select-fun params lo hi)))
 
             (and bounded? pkg mod (not fun))
-            (conj (aggregated agg (select-mod params)))
+            (conj (aggregated agg (select-mod params lo hi)))
 
             (and bounded? pkg (not mod) (not fun))
-            (conj (aggregated agg (select-pkg params)))
+            (conj (aggregated agg (select-pkg params lo hi)))
 
             (and bounded? kind (not sign))
-            (conj (aggregated agg (select-kind params)))
+            (conj (aggregated agg (select-kind params lo hi)))
 
             (and bounded? sign)
-            (conj (aggregated agg (select-sender params)))
+            (conj (aggregated agg (select-sender params lo hi)))
 
             (and bounded? recv)
-            (conj (aggregated agg (select-recipient params)))
+            (conj (aggregated agg (select-recipient params lo hi)))
 
             (and bounded? input)
-            (conj (aggregated agg (select-input params)))
+            (conj (aggregated agg (select-input params lo hi)))
 
             (and bounded? changed)
-            (conj (aggregated agg (select-changed params)))))
+            (conj (aggregated agg (select-changed params lo hi)))))
 
         tx-lo (bounds :greatest :min after)
         tx-hi (bounds :least    :max before)]
     (assert (consistent? params))
-    {:select [:tx-sequence-number]
-     :from [(keyword denorm)]
+    (cond->
+        {:select [:tx-sequence-number]
+         :from [(keyword denorm)]
 
-     :where
-     (cond-> [:and]
-       (and pkg mod fun)
-       (conj (<text (str (hex/normalize pkg) "::" mod "::" fun) :functions))
+         :where
+         (cond-> [:and]
+           (and pkg mod fun)
+           (conj (<text (str (hex/normalize pkg) "::" mod "::" fun) :functions))
 
-       (and pkg mod (not fun))
-       (conj (<text (str (hex/normalize pkg) "::" mod) :modules))
+           (and pkg mod (not fun))
+           (conj (<text (str (hex/normalize pkg) "::" mod) :modules))
 
-       (and pkg (not mod) (not fun))
-       (conj (<byte pkg :packages))
+           (and pkg (not mod) (not fun))
+           (conj (<byte pkg :packages))
 
-       (and (not sign) (= kind :system))
-       (conj [:= :sender sys-addr:bytes])
+           (and (not sign) (= kind :system))
+           (conj [:= :sender sys-addr:bytes])
 
-       (and (not sign) (= kind :programmable))
-       (conj [:not= :sender sys-addr:bytes])
+           (and (not sign) (= kind :programmable))
+           (conj [:not= :sender sys-addr:bytes])
 
-       sign (conj [:= :sender (hex->bytes sign)])
-       recv (conj (<byte recv :recipients))
+           sign (conj [:= :sender (hex->bytes sign)])
+           recv (conj (<byte recv :recipients))
 
-       input   (conj (<byte input :inputs))
-       changed (conj (<byte changed :changed))
+           input   (conj (<byte input :inputs))
+           changed (conj (<byte changed :changed))
 
-       cp-=
-       (conj [:between :tx-sequence-number
-              (from-cp-tx cp-= :min-tx-sequence-number)
-              (from-cp-tx cp-= :max-tx-sequence-number)])
+           cp-=
+           (conj [:between :tx-sequence-number
+                  (from-cp-tx cp-= :min-tx-sequence-number)
+                  (from-cp-tx cp-= :max-tx-sequence-number)])
 
-       (and (not cp-=) cp-<)
-       (conj [:< :tx-sequence-number
-              (from-cp-tx cp-< :min-tx-sequence-number)])
+           (and (not cp-=) cp-<)
+           (conj [:< :tx-sequence-number
+                  (from-cp-tx cp-< :min-tx-sequence-number)])
 
-       (and (not cp-=) cp->)
-       (conj [:> :tx-sequence-number
-              (from-cp-tx cp-> :max-tx-sequence-number)])
+           (and (not cp-=) cp->)
+           (conj [:> :tx-sequence-number
+                  (from-cp-tx cp-> :max-tx-sequence-number)])
 
-       (< 1 (count tx-lo)) (conj [:>= :tx-sequence-number tx-lo])
-       (< 1 (count tx-hi)) (conj [:<= :tx-sequence-number tx-hi]))}))
+           (< 1 (count tx-lo)) (conj [:>= :tx-sequence-number tx-lo])
+           (< 1 (count tx-hi)) (conj [:<= :tx-sequence-number tx-hi]))}
+
+      ids
+      (assoc :join [[{:select [:tx-sequence-number]
+                      :from [(keyword +tx-digests+)]
+                      :where [:in :tx-digest (map b58/decode ids)]}
+                     (keyword +tx-digests+)]
+                    [:using :tx-sequence-number]]))))
 
 ;; Entrypoints ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
