@@ -169,7 +169,7 @@
      (try (do ~@body)
           (finally (jdbc/execute! ~tx ["ROLLBACK"])))))
 
-(defn- sqlize-bytea [bs]
+(defn sqlize-bytea [bs]
   (as-> bs %
     (map #(format "%02x" %) %)
     (s/join %)
