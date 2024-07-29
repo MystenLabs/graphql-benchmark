@@ -1167,6 +1167,84 @@
       (update $ :transactions strip-idx)
       (dissoc $ :objects))))
 
+;; Prorated ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn prorated
+  "Simulate a version of the database which has exactly the given number
+  of transactions, events, live objects, and all historical objects,
+  which also includes the live objects.
+
+  This simulation works by calculating an average cost per entity in
+  each table, and then extrapolating that to the quantity given."
+  [tables & {:keys [transactions
+                    events
+                    live-objects
+                    historical-objects]}]
+  (let [tuples #(->> tables % (map :tuples) (reduce +))
+
+        total-tx (tuples :transactions)
+        tx-rate (/ transactions total-tx)
+
+        total-ev (tuples :events)
+        ev-rate (/ events total-ev)
+
+        total-live (tuples :objects)
+        live-rate (/ live-objects total-live)
+
+        total-history (tuples :objects-history)
+        historical-rate (/ historical-objects total-history)
+
+        ;; Reduce the number of tuples among all `part`itions to
+        ;; `count`. Tuples are taken from the end by taking whole
+        ;; partitions, until a partition is found with more than the
+        ;; required remaining `count` of `:tuples`. That last
+        ;; partition is prorated.
+        partition-slice
+        (fn [parts count]
+          (loop [slice '() parts (reverse parts) count count]
+            (if-let [{:keys [tuples] :as stat} (first parts)]
+              (if (< tuples count)
+                ;; Need to keep looking at partitions as this one
+                ;; doesn't have enough
+                (recur (conj slice stat)
+                       (rest parts)
+                       (- count tuples))
+
+                ;; This partition has enough tuples to cover the
+                ;; remaining count, prorate its size to match that
+                ;; remainder.
+                (->> (stat-prorate stat (/ count tuples))
+                     (conj slice) (into [])))
+
+              ;; We ran out of partitions before we met the count
+              (into [] slice))))]
+    (-> tables
+        (update :events partition-slice events)
+        (update-in [:event-emit-package 0] stat-prorate ev-rate)
+        (update-in [:event-emit-module 0] stat-prorate ev-rate)
+        (update-in [:event-senders 0] stat-prorate ev-rate)
+        (update-in [:event-struct-package 0] stat-prorate ev-rate)
+        (update-in [:event-struct-module 0] stat-prorate ev-rate)
+        (update-in [:event-struct-name 0] stat-prorate ev-rate)
+        (update-in [:event-struct-instantiation 0] stat-prorate ev-rate)
+
+        (update-in [:objects 0] stat-prorate live-rate)
+        (update-in [:objects-snapshot 0] stat-prorate live-rate)
+
+        (update :objects-history partition-slice historical-objects)
+        (update-in [:objects-version 0] stat-prorate historical-rate)
+
+        (update :transactions partition-slice transactions)
+        (update-in [:tx-calls-pkg 0] stat-prorate tx-rate)
+        (update-in [:tx-calls-mod 0] stat-prorate tx-rate)
+        (update-in [:tx-calls-fun 0] stat-prorate tx-rate)
+        (update-in [:tx-changed-objects 0] stat-prorate tx-rate)
+        (update-in [:tx-digests 0] stat-prorate tx-rate)
+        (update-in [:tx-input-objects 0] stat-prorate tx-rate)
+        (update-in [:tx-kinds 0] stat-prorate tx-rate)
+        (update-in [:tx-recipients 0] stat-prorate tx-rate)
+        (update-in [:tx-senders 0] stat-prorate tx-rate))))
+
 ;; Removing Filters ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn rm-event-emit
