@@ -538,9 +538,29 @@
     :objects/object-version+
     :objects/serialized-object*
 
-    :objects-history/object-id+
-    :objects-history/object-version+
+    ;; Remove all fields from `objects-history`, except
+    ;; `serialized-object`, and the key columns which get ported to
+    ;; the key-value store.
+    ;;
+    ;; This means that we drop support for rich queries on historical objects.
+    :objects-history/object-id
+    :objects-history/object-version
+    :objects-history/object-status*
+    :objects-history/object-digest*
+    :objects-history/checkpoint-sequence-number*
+    :objects-history/owner-type*
+    :objects-history/owner-id*
+    :objects-history/object-type*
+    :objects-history/object-type-package*
+    :objects-history/object-type-module*
+    :objects-history/object-type-name*
     :objects-history/serialized-object
+    :objects-history/coin-type*
+    :objects-history/coin-balance*
+    :objects-history/df-kind*
+    :objects-history/df-name*
+    :objects-history/df-object-type*
+    :objects-history/df-object-id*
 
     :objects-snapshot/object-id+
     :objects-snapshot/object-version+
@@ -1020,6 +1040,35 @@
     ;; holds the estimated key-value store size (`for` produces a lazy
     ;; sequence).
     (assoc extracted :kv-store [{:self @kv-size}])))
+
+;; No Rich Historical Object Queries ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn basic-historical-objects
+  "This optimisation is borne out of an observation that the largest win
+  from offloading to a KV store comes from dropping the richer indices
+  from the historical objects table."
+  [tables]
+  (let [keep-column?
+        #{:object-id
+          :object-version
+          :serialized-object}
+
+        update-stat
+        (fn [{:keys [self tuples cols] :as stat}]
+          (if-not (and self tuples cols)
+            stat
+            (let [extra-width
+                  (reduce (fn [w [col {:keys [width null]}]]
+                            (cond-> w
+                              (not (keep-column? col))
+                              (+ (* width (- 1 null)) null)))
+                          0 cols)]
+              (-> stat
+                  (update :self - (* tuples extra-width))
+                  (dissoc :idx)
+                  (update :cols select-keys keep-column?)))))]
+    (update tables :objects-history
+            (partial mapv update-stat))))
 
 ;; Abstract IDs and Addresses ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
