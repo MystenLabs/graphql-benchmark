@@ -309,6 +309,184 @@
 
    :tx-senders/sender                                      -2})
 
+(def graphql-columns
+  "Columns that GraphQL uses."
+  #{:chain-identifier/checkpoint-digest
+
+    :checkpoints/sequence-number
+    :checkpoints/checkpoint-digest
+    :checkpoints/epoch
+    :checkpoints/network-total-transactions
+    :checkpoints/previous-checkpoint-digest
+    :checkpoints/end-of-epoch
+    :checkpoints/timestamp-ms
+    :checkpoints/total-gas-cost
+    :checkpoints/computation-cost
+    :checkpoints/storage-cost
+    :checkpoints/storage-rebate
+    :checkpoints/non-refundable-storage-fee
+    :checkpoints/checkpoint-commitments
+    :checkpoints/validator-signature
+    :checkpoints/end-of-epoch-data
+    :checkpoints/min-tx-sequence-number
+    :checkpoints/max-tx-sequence-number
+
+    :display/object-type
+    :display/id
+    :display/version
+    :display/bcs
+
+    :epochs/epoch
+    :epochs/first-checkpoint-id
+    :epochs/epoch-start-timestamp
+    :epochs/reference-gas-price
+    :epochs/protocol-version
+    :epochs/total-stake
+    :epochs/storage-fund-balance
+    :epochs/system-state
+    :epochs/epoch-total-transactions
+    :epochs/last-checkpoint-id
+    :epochs/epoch-end-timestamp
+    :epochs/storage-fund-reinvestment
+    :epochs/storage-charge
+    :epochs/storage-rebate
+    :epochs/stake-subsidy-amount
+    :epochs/total-gas-fees
+    :epochs/total-stake-rewards-distributed
+    :epochs/leftover-storage-fund-inflow
+    :epochs/epoch-commitments
+
+    :events/tx-sequence-number
+    :events/event-sequence-number
+    :events/timestamp-ms
+    :events/bcs
+
+    :event-emit-package/package
+    :event-emit-package/tx-sequence-number
+    :event-emit-package/event-sequence-number
+    :event-emit-package/sender
+
+    :event-emit-module/package
+    :event-emit-module/module
+    :event-emit-module/tx-sequence-number
+    :event-emit-module/event-sequence-number
+    :event-emit-module/sender
+
+    :event-senders/sender
+    :event-senders/tx-sequence-number
+    :event-senders/event-sequence-number
+
+    :event-struct-package/package
+    :event-struct-package/tx-sequence-number
+    :event-struct-package/event-sequence-number
+    :event-struct-package/sender
+
+    :event-struct-module/package
+    :event-struct-module/module
+    :event-struct-module/tx-sequence-number
+    :event-struct-module/event-sequence-number
+    :event-struct-module/sender
+
+    :event-struct-name/package
+    :event-struct-name/module
+    :event-struct-name/type-name
+    :event-struct-name/tx-sequence-number
+    :event-struct-name/event-sequence-number
+    :event-struct-name/sender
+
+    :event-struct-instantiation/package
+    :event-struct-instantiation/module
+    :event-struct-instantiation/type-instantiation
+    :event-struct-instantiation/tx-sequence-number
+    :event-struct-instantiation/event-sequence-number
+    :event-struct-instantiation/sender
+
+    :objects-history/object-id
+    :objects-history/object-version
+    ;; :objects-history/object-status  only used to detect active or deleted
+    :objects-history/checkpoint-sequence-number
+    :objects-history/owner-type
+    :objects-history/owner-id
+    :objects-history/object-type-package
+    :objects-history/object-type-module
+    :objects-history/object-type-name
+    :objects-history/serialized-object
+    :objects-history/coin-type
+    :objects-history/coin-balance
+    :objects-history/df-kind
+    ;; Not currently used.
+    ;; :objects-history/df-name
+    ;; :objects-history/df-object-type
+    :objects-history/df-object-id
+
+    :objects-snapshot/object-id
+    :objects-snapshot/object-version
+    ;; :objects-snapshot/object-status
+    :objects-snapshot/checkpoint-sequence-number
+    :objects-snapshot/owner-type
+    :objects-snapshot/owner-id
+    :objects-snapshot/object-type-package
+    :objects-snapshot/object-type-module
+    :objects-snapshot/object-type-name
+    :objects-snapshot/serialized-object
+    :objects-snapshot/coin-type
+    :objects-snapshot/coin-balance
+    :objects-snapshot/df-kind
+    ;; :objects-snapshot/df-name
+    ;; :objects-snapshot/df-object-type
+    :objects-snapshot/df-object-id
+
+    :objects-version/object-id
+    :objects-version/object-version
+    :objects-version/cp-sequence-number
+
+    :packages/package-id
+    :packages/original-id
+    :packages/package-version
+    :packages/move-package
+    :packages/checkpoint-sequence-number
+
+    :transactions/tx-sequence-number
+    :transactions/raw-transaction
+    :transactions/raw-effects
+    :transactions/timestamp-ms
+
+    :tx-calls-pkg/tx-sequence-number
+    :tx-calls-pkg/package
+    :tx-calls-pkg/sender
+
+    :tx-calls-mod/tx-sequence-number
+    :tx-calls-mod/package
+    :tx-calls-mod/module
+    :tx-calls-mod/sender
+
+    :tx-calls-fun/tx-sequence-number
+    :tx-calls-fun/package
+    :tx-calls-fun/module
+    :tx-calls-fun/func
+    :tx-calls-fun/sender
+
+    :tx-changed-objects/tx-sequence-number
+    :tx-changed-objects/object-id
+    :tx-changed-objects/sender
+
+    :tx-digests/tx-digest
+    :tx-digests/tx-sequence-number
+
+    :tx-input-objects/tx-sequence-number
+    :tx-input-objects/object-id
+    :tx-input-objects/sender
+
+    :tx-kinds/tx-sequence-number
+    :tx-kinds/tx-kind
+
+    :tx-recipients/tx-sequence-number
+    :tx-recipients/recipient
+    :tx-recipients/sender
+
+    :tx-senders/tx-sequence-number
+    :tx-senders/sender})
+
 (def kv-columns
   "Columns that could be moved to a blob store.
 
@@ -420,6 +598,7 @@
                       {:columns unknown})))))
 
 (->> id-columns (keys) (into #{}) (validate-columns))
+(validate-columns graphql-columns)
 (->> kv-columns (map undecorate) (into #{}) (validate-columns))
 
 ;; Table sizes ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -927,6 +1106,52 @@
         (update :event-struct-module on-table 1)
         (update :event-struct-name on-table 1)
         (update :event-struct-instantiation on-table 1))))
+
+;; GraphQL-only schema ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn graphql-only
+  "Identify the columns, tables, and indices that are strictly necessary
+  for GraphQL -- everything else can be removed -- using the following
+  heuristics:
+
+  - Keep only columns that are in `graphql-columns`. It's assumed that
+    these columns only affect the `:self` size, not primary key and
+    indices, unless all columns are removed, and in that case, the
+    primary key and index contribution will also be removed.
+
+  - Remove indices on the `events` and `transactions` tables which are
+    not used by GraphQL.
+
+  - Remove the `objects` table entirely, which is also not used by
+    GraphQL."
+  [tables]
+  (let [check-gql
+        (fn [table {:keys [tuples self] :as stat} [col {:keys [width]}]]
+          (if (or (not tuples) (neg? tuples) (not self)
+                  (graphql-columns (fq-name table col)))
+            ;; Leave the statistic unchanged if there is no tuple
+            ;; information, self size, or we notice that this column
+            ;; is used by GraphQL.
+            stat
+
+            ;; Otherwise, remove its estimated contribution from the
+            ;; self size, remove the column from the column width info
+            ;; as well.
+            (-> stat
+                (update :self - (* tuples width))
+                (update :cols dissoc col))))
+
+        rm-not-gql
+        (fn [table stat]
+          (reduce (partial check-gql table) stat (:cols stat)))
+
+        strip-idx
+        (partial mapv #(dissoc % :idx))]
+    (as-> tables $
+      (filter-map-table-stats rm-not-gql $)
+      (update $ :events strip-idx)
+      (update $ :transactions strip-idx)
+      (dissoc $ :objects))))
 
 ;; Optimization entrypoint ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
