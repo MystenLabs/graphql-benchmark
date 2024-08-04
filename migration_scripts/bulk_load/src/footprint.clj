@@ -75,43 +75,91 @@
             #"^tx_input_objects"           [:tx-input-objects]
             #"^tx_kinds"                   [:tx-kinds]
             #"^tx_recipients"              [:tx-recipients]
-            #"^tx_senders"                 [:tx-senders]))]
-    (->> ["SELECT
-               relname,
-               relkind,
-               reltuples,
-               pg_table_size(CAST(relname AS VARCHAR)) tab_size,
-               pg_relation_size(CAST(relname AS VARCHAR)) rel_size
-           FROM
-               pg_class
-           WHERE
-               relkind IN ('i', 'r')
-           AND relname NOT LIKE 'pg_%'
-           AND relname NOT LIKE 'sql_%'
-           AND relname NOT LIKE '__diesel_%'"]
-         (jdbc/execute! db)
+            #"^tx_senders"                 [:tx-senders]))
 
-         ;; Each row represents a table or an index. Figure out
-         ;; which (potentially partitioned) table it belongs to.
-         (map (fn [{:pg_class/keys [relname relkind reltuples]
-                    :keys [tab_size rel_size]}]
-                [(table->entity relname)
-                 (cond
-                   (= relkind "r")
-                   {:self rel_size
-                    :toast (- tab_size rel_size)
-                    :tuples reltuples}
-                   (s/ends-with? relname "_pkey")
-                   {:pkey rel_size}
-                   :else
-                   {:idx rel_size})]))
+        per-table-size-stats
+        (->> ["SELECT
+                   relname,
+                   relkind,
+                   reltuples,
+                   pg_table_size(CAST(relname AS VARCHAR)) tab_size,
+                   pg_relation_size(CAST(relname AS VARCHAR)) rel_size
+               FROM
+                   pg_class
+               WHERE
+                   relkind IN ('i', 'r')
+               AND relname NOT LIKE 'pg_%'
+               AND relname NOT LIKE 'sql_%'
+               AND relname NOT LIKE '__diesel_%'"]
+             (jdbc/execute! db)
 
-         ;; Group by the table name, and merge entries together, so that for
-         ;; each table we get a single stats map.
+             ;; Each row represents a table or an index. Figure out
+             ;; which (potentially partitioned) table it belongs to.
+             (map (fn [{:pg_class/keys [relname relkind reltuples]
+                        :keys [tab_size rel_size]}]
+                    [(table->entity relname)
+                     (cond
+                       (= relkind "r")
+                       {:self rel_size
+                        :toast (- tab_size rel_size)
+                        :tuples reltuples}
+                       (s/ends-with? relname "_pkey")
+                       {:pkey rel_size}
+                       :else
+                       {:idx rel_size})]))
+
+             ;; Group by the table name, and merge entries together, so that for
+             ;; each table we get a single stats map.
+             (group-by first)
+             (map (fn [[key stats]]
+                    [key (apply merge-with +
+                                (map second stats))])))
+
+        ;; Note that column stats may be missing if the relevant
+        ;; tables haven't been analysed.
+        per-table-column-stats
+        (->> ["SELECT
+                   tablename,
+                   attname,
+                   avg_width
+               FROM
+                   pg_stats
+               WHERE
+                   tablename NOT LIKE 'pg_%'
+               AND tablename NOT LIKE 'sql_%'
+               AND tablename NOT LIKE '__diesel_%'
+               AND tablename NOT IN (
+                   'events',
+                   'transactions',
+                   'objects_history'
+               )"]
+             (jdbc/execute! db)
+
+             ;; Each row represents a column in a table. Re-interpret
+             ;; the table name into an "entity" name which will be
+             ;; used to group together partitions of a table
+             ;; together (later).
+             (map (fn [{:pg_stats/keys [tablename attname avg_width]}]
+                    [(table->entity tablename)
+                     (sql->keyword attname)
+                     avg_width]))
+
+             ;; Group all the columns for an entity together, and then
+             ;; create a column width dictionary.
+             (group-by first)
+             (map (fn [[key cols]]
+                    [key {:cols (->> cols
+                                     (map (fn [[_ col width]] [col width]))
+                                     (into {}))}])))]
+    (->> (concat per-table-size-stats
+                 per-table-column-stats)
+
+         ;; We now have a map of size stats and a map of column stats
+         ;; per entity, do another group and merge to bring them
+         ;; together under one key.
          (group-by first)
          (map (fn [[key stats]]
-                [key (apply merge-with +
-                            (map second stats))]))
+                [key (->> stats (map second) (apply merge))]))
 
          ;; Sort results so that partitions end up in order, and group again,
          ;; this time by table names ignoring partitions.
