@@ -716,7 +716,7 @@
         #(->> %
               (map (fn [{:keys [tuples] :as stats}]
                      (update stats :idx (fnil + 0 0)
-                             (and tuples (* 16 tuples)))))
+                             (and tuples (pos? tuples) (* 16 tuples)))))
               (into []))]
     (reduce #(update %1 %2 idx-overhead) tables
             [:event-emit-module
@@ -854,7 +854,7 @@
         (fn [table {:keys [tuples cols] :as stat}]
           ;; If there is no column or tuple information, return the
           ;; statistics unprocessed.
-          (if-not (and tuples cols)
+          (if-not (and tuples (pos? tuples) cols)
             stat
             (loop [cols (seq cols) stat stat]
               (if-let [[col {:keys [null]}] (first cols)]
@@ -896,3 +896,54 @@
           (#(filter-map-table-stats replace-id-cols %))
           (assoc :abstract-ids abstract-ids))
       tables)))
+
+;; Single Event Sequence Number ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn single-event-sequence-number
+  "Simulate representing an event by just a single number (not both the
+  transaction sequence number and the event sequence number).
+
+  This change only affects events related tables. For these tables, we can:
+
+  - Save on `:self` size by removing a column.
+  - Save on `:pkey` size because this column is part of the key.
+  - Save on `:idx` size for filter tables, where this value appears in
+    the sender secondary index."
+  [tables]
+  (let [rm
+        (fn [col times {:keys [tuples] :as stat}]
+         (cond-> stat
+           (and tuples (pos? tuples) (col stat))
+           (update col - (* 8 tuples times))))
+
+        on-table
+        #(mapv (fn [s] (->> s (rm :self 1) (rm :pkey 1) (rm :idx %2))) %1)]
+    (-> tables
+        (update :events on-table 4)
+        (update :event-emit-package on-table 1)
+        (update :event-emit-module on-table 1)
+        (update :event-senders on-table 1)
+        (update :event-struct-package on-table 1)
+        (update :event-struct-module on-table 1)
+        (update :event-struct-name on-table 1)
+        (update :event-struct-instantiation on-table 1))))
+
+;; Optimization entrypoint ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn optimize
+  "Apply all the optimizations in `opts` to `tables` and return a new
+  set of stats representing the optimized tables."
+  [tables & opts]
+  (let [opts (into #{} opts)]
+    (cond->> tables
+      ;; Hardcode a 30 day pruning window
+      (:pruned     opts) (pruned 30)
+      (:prune-scan opts) efficient-pruning-scan
+      (:event-seq  opts) single-event-sequence-number
+      (:short-ids  opts) abstracted-ids
+      (:gql-only   opts) graphql-only
+      (:kv-store   opts) offloaded-to-kv-store
+      ;; Clustering removes primary key footprints so it's best to
+      ;; apply it at the end, in case other optimisations introduce
+      ;; new primary keys.
+      (:clustered opts) clustered)))
