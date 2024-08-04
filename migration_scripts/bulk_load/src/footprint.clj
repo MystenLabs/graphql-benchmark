@@ -770,16 +770,20 @@
       (format "%.2f %s" (double sz) (first units))
       (recur (/ sz 1024) (rest units)))))
 
+(defn stat-footprint [{:keys [pkey self idx toast]}]
+  (+ self (or pkey 0) (or idx 0) (or toast 0)))
+
+(defn table-footprint [stats]
+  (reduce + (map stat-footprint stats)))
+
 (defn footprint
   "Calculate the total footprint in the DB given the per-table breakdown.
 
   Ignores size attributed to the KV store, if there is one."
   [tables]
-  (->> tables
-     (mapcat (fn [[table stats]] (when (not= :kv-store table) stats)))
-     (map (fn [{:keys [pkey self idx toast]}]
-            (+ self (or pkey 0) (or idx 0) (or toast 0))))
-     (reduce +)))
+  (->> (dissoc tables :kv-store) vals
+       (map table-footprint)
+       (reduce +)))
 
 (defn stat-prorate
   "Scale all numeric fields of `stat` by `ratio`."
@@ -1232,3 +1236,23 @@
       ;; apply it at the end, in case other optimisations introduce
       ;; new primary keys.
       (:clustered opts) clustered)))
+
+;; Cost functions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn consistency-costs
+  "How much storage cost does consistency contribute?
+
+  This is estimated as 15 minutes of data from `objects_history`.
+  Ideally we would measure the cost of the last 15 minutes of data
+  that was added to the table, but this is difficult to do and
+  sensitive to current traffic patterns.
+
+  Instead we approximate by taking a 15 minute slice from every full
+  epoch (every partition except the last), assuming for simplicity
+  that objects were added uniformly to each epoch."
+  [tables]
+  (let [cost #(-> % stat-footprint
+                  (/ 24 60) (* 15))]
+    (->> (:objects-history tables)
+         (drop-last)
+         (mapv cost))))
