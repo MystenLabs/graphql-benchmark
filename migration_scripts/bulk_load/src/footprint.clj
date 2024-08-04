@@ -219,6 +219,95 @@
     :tx-senders/tx-sequence-number
     :tx-senders/sender})
 
+(def id-columns
+  "These are columns known to hold account addresses or object IDs.
+
+  We include columns that contain object types, because most of them
+  will include at least one (package) ID.
+
+  Every column that holds an address or object ID gets an entry in
+  this mapping. Its value indicates how many relations that column
+  appears in. Its absolute value is always non-zero (so counts one for
+  the table itself), and it is negative if the column is a key
+  column (appears in the primary key)."
+  {:display/id                                              1
+   :display/object-type                                    -2
+
+   :events/senders                                          1
+   :events/package                                          3
+   :events/event-type                                       2
+
+   :event-emit-package/package                             -3
+   :event-emit-package/sender                               2
+
+   :event-emit-module/package                              -3
+   :event-emit-module/sender                                2
+
+   :event-senders/sender                                   -2
+
+   :event-struct-package/package                           -3
+   :event-struct-package/sender                             2
+
+   :event-struct-module/package                            -3
+   :event-struct-module/sender                              2
+
+   :event-struct-name/package                              -3
+   :event-struct-name/sender                                2
+
+   :event-struct-instantiation/package                     -3
+   :event-struct-instantiation/sender                       2
+   ;; Technically a type instantiation could be a primitive, but
+   ;; let's assume that most are not.
+   :event-struct-instantiation/type-instantiation          -3
+
+   :objects/object-id                                      -2
+   :objects/object-type                                     3
+   :objects/owner-id                                        4
+   :objects/coin-type                                       2
+   :objects/df-object-id                                    1
+   :objects/df-object-type                                  1
+   :objects/object-type-package                             3
+
+   :objects-snapshot/object-id                             -5
+   :objects-snapshot/object-type                            3
+   :objects-snapshot/owner-id                               4
+   :objects-snapshot/coin-type                              3
+   :objects-snapshot/df-object-id                           1
+   :objects-snapshot/df-object-type                         1
+   :objects-snapshot/object-type-package                    3
+
+   :objects-history/object-id                              -5
+   :objects-history/object-type                             4
+   :objects-history/owner-id                                4
+   :objects-history/coin-type                               3
+   :objects-history/df-object-id                            1
+   :objects-history/df-object-type                          1
+   :objects-history/object-type-package                     3
+
+   :objects-version/object-id                              -2
+
+   :packages/package-id                                    -3
+   :packages/original-id                                    2
+
+   :tx-calls-pkg/package                                   -3
+   :tx-calls-pkg/sender                                     2
+
+   :tx-calls-mod/package                                   -3
+   :tx-calls-mod/sender                                     2
+
+   :tx-calls-fun/package                                   -3
+   :tx-calls-fun/sender                                     2
+
+   :tx-changed-objects/object-id                           -3
+   :tx-changed-objects/sender                               2
+
+   :tx-input-objects/object-id                             -3
+   :tx-input-objects/sender                                 2
+
+   :tx-recipients/recipient                                -3
+   :tx-recipients/sender                                    2
+
+   :tx-senders/sender                                      -2})
 
 (def kv-columns
   "Columns that could be moved to a blob store.
@@ -308,6 +397,11 @@
 (defn sql->keyword [ident]
   (keyword (s/replace ident \_ \-)))
 
+(defn fq-name
+  "Fully-qualified name of `col` in `table`."
+  [table col]
+  (keyword (name table) (name col)))
+
 (defn tables
   "Get the table names from a sequence of columns.
 
@@ -325,6 +419,7 @@
       (throw (ex-info (str "Unknown columns")
                       {:columns unknown})))))
 
+(->> id-columns (keys) (into #{}) (validate-columns))
 (->> kv-columns (map undecorate) (into #{}) (validate-columns))
 
 ;; Table sizes ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -434,7 +529,9 @@
         (->> ["SELECT
                    tablename,
                    attname,
-                   avg_width
+                   avg_width,
+                   n_distinct,
+                   null_frac
                FROM
                    pg_stats
                WHERE
@@ -452,17 +549,18 @@
              ;; the table name into an "entity" name which will be
              ;; used to group together partitions of a table
              ;; together (later).
-             (map (fn [{:pg_stats/keys [tablename attname avg_width]}]
+             (map (fn [{:pg_stats/keys
+                        [tablename attname avg_width n_distinct null_frac]}]
                     [(table->entity tablename)
                      (sql->keyword attname)
-                     avg_width]))
+                     {:width avg_width :distinct n_distinct :null null_frac}]))
 
              ;; Group all the columns for an entity together, and then
              ;; create a column width dictionary.
              (group-by first)
              (map (fn [[key cols]]
                     [key {:cols (->> cols
-                                     (map (fn [[_ col width]] [col width]))
+                                     (map (fn [[_ col stat]] [col stat]))
                                      (into {}))}])))]
     (->> (concat per-table-size-stats
                  per-table-column-stats)
@@ -526,6 +624,23 @@
     (assert (= objects-history transactions events))
     objects-history))
 
+(defn filter-map-table-stats
+  "Apply `f` to every statistic in `tables` (whose shape matches the
+  return from `table-stats`).
+
+  `f` is expected to be a function that accepts two values: The table
+  name and the statistics for that table name and it is expected to
+  return modified statistics, or `nil`.
+
+  If `f` returns `nil` that statistic will be removed. If all
+  statistics for a table are removed, the table itself is removed."
+  [f tables]
+  (->> (for [[t ss] tables
+             :let [rs (->> ss (map #(f t %)) (filter some?) (into []))]
+             :when (seq rs)]
+         [t rs])
+       (into {})))
+
 ;; Clustered Tables ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn clustered
@@ -534,10 +649,7 @@
   In that case, we will use no extra storage for primary keys"
   [tables]
   (let [no-pkey #(dissoc % :pkey)]
-    (->> tables
-         (map (fn [[table stats]]
-                [table (->> stats (map no-pkey) (into []))]))
-         (into {}))))
+    (update-vals tables #(->> % (map no-pkey) (into [])))))
 
 ;; Pruning ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -625,7 +737,9 @@
              :tx-input-objects
              :tx-kinds
              :tx-recipients
-             :tx-senders])))
+             :tx-senders
+
+             :abstract-ids])))
 
 ;; KV Store ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -676,8 +790,9 @@
             ;; over the remaining columns.
             (do (swap! kv-size + (or toast 0))
                 (loop [cols (seq cols) stat (dissoc stat :toast)]
-                  (if-let [[col width] (first cols)]
-                    (let [weight (* tuples width)
+                  (if-let [[col {:keys [width null]}] (first cols)]
+                    (let [weight (+ (* tuples (- 1 null) width)
+                                    (* tuples null))
 
                           credit-kv!
                           #(swap! kv-size + weight)
@@ -696,20 +811,88 @@
                     ;; offloaded, and return `nil`.
                     (when (seq (:cols stat)) stat))))))
 
-        extract-kvs
-        (fn [table stats]
-          (->> stats
-               (map #(extract-kv table %))
-               (filter some?)
-               (into [])))
-
-        extracted
-        (into {} (for [[table stats] tables
-                       :let [extract (extract-kvs table stats)]
-                       :when (seq extract)]
-                   [table extract]))]
+        extracted (filter-map-table-stats extract-kv tables)]
 
     ;; Materialize `extracted` into a dictionary first, so `kv-size`
     ;; holds the estimated key-value store size (`for` produces a lazy
     ;; sequence).
     (assoc extracted :kv-store [{:self @kv-size}])))
+
+;; Abstract IDs and Addresses ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn abstracted-ids
+  "Simulate replacing 32B Addresses and Object IDs with an 8B key.
+
+  Requires creating a mapping from long IDs to short IDs"
+  [tables]
+  (let [object-ids
+        (get-in tables [:objects-snapshot 0 :tuples])
+
+        txr-distinct
+        (get-in tables [:tx-recipients 0 :cols :recipient :distinct])
+
+        txr-tuples
+        (get-in tables [:tx-recipients 0 :tuples])
+
+        ;; If the `distinct` stat is negative, its absolute value is
+        ;; interpreted as the denominator of a ratio.
+        addresses
+        (cond (not txr-distinct)        nil
+              (not (neg? txr-distinct)) txr-distinct
+              :else (* txr-tuples (- txr-distinct)))
+
+        unique-ids
+        (+ (or object-ids 0) (or addresses 0))
+
+        ;; Pay 40B for each unique ID (32B for the long ID and 8B for
+        ;; the short ID), potentially twice if we don't have clustered
+        ;; tables.
+        abstract-ids
+        [{:self (* 40 unique-ids) :pkey (* 40 unique-ids) :tuples unique-ids}]
+
+        replace-id-cols
+        (fn [table {:keys [tuples cols] :as stat}]
+          ;; If there is no column or tuple information, return the
+          ;; statistics unprocessed.
+          (if-not (and tuples cols)
+            stat
+            (loop [cols (seq cols) stat stat]
+              (if-let [[col {:keys [null]}] (first cols)]
+                (let [used (id-columns (fq-name table col))
+
+                      replace
+                      (fn replace
+                        ([sz-before] (replace sz-before 1))
+                        ([sz-before times]
+                         (let [debit (* 24 tuples (- 1 null) times)]
+                           (cond
+                             (nil? sz-before) nil
+                             (> debit sz-before) 0
+                             :else (- sz-before debit)))))]
+                  (recur (rest cols)
+                         (cond
+                           ;; This column isn't an ID column, do nothing.
+                           (nil? used) stat
+
+                           ;; This is an ID column and one of its uses
+                           ;; is in the table's primary key.
+                           (neg? used)
+                           (-> stat
+                               (update-in [:cols col :width] - 24)
+                               (update :self replace)
+                               (update :pkey replace)
+                               (update :idx  replace (- (- used) 2)))
+
+                           ;; This is an ID column that does not
+                           ;; appear in the primary key.
+                           :else
+                           (-> stat
+                               (update-in [:cols col :width] - 24)
+                               (update :self replace)
+                               (update :idx  replace (- used 1))))))
+                stat))))]
+    (if (and object-ids addresses)
+      (-> tables
+          (#(filter-map-table-stats replace-id-cols %))
+          (assoc :abstract-ids abstract-ids))
+      tables)))
