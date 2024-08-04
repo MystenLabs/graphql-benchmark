@@ -1256,3 +1256,20 @@
     (->> (:objects-history tables)
          (drop-last)
          (mapv cost))))
+
+(defn delete-wrap-cost
+  "Estimate the cost due to tracking deleted and wrapped objects.
+
+  This is roughly the difference in size between `objects_snapshot`
+  and `objects`, less the size of the consistent range.
+
+  The consistent range size is estimated as the size of the last full
+  `objects_history` partition, prorated to 15 minutes."
+  [tables]
+  (let [snap  (table-footprint (:objects-snapshot tables))
+        objs  (table-footprint (:objects tables))
+        parts (partitions tables)
+
+        consistency-cost
+        (stat-footprint (get-in tables [:objects-history (- parts 2)]))]
+    (- snap objs consistency-cost)))
