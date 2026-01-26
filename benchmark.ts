@@ -73,8 +73,8 @@ export class PaginationV2 {
 export async function benchmark_connection_query(
   benchmarkParams: BenchmarkParams,
   testFn: (
-    cursor: PaginationParams,
-  ) => Promise<{ pageInfo: PageInfo | ReportStatus; variables: any }>,
+    cursor: PaginationParams
+  ) => Promise<{ pageInfo: PageInfo | ReportStatus; variables: any }>
 ): Promise<Report> {
   let { paginateForwards, limit, numPages } = benchmarkParams;
 
@@ -126,7 +126,7 @@ export async function benchmark_connection_query(
     reportStatus as ReportStatus,
     queryParams,
     cursors,
-    metrics(durations),
+    metrics(durations)
   );
 }
 
@@ -171,7 +171,7 @@ export function report<T>(
   reportStatus: ReportStatus,
   variables: T,
   cursors: string[],
-  metrics: Metrics,
+  metrics: Metrics
 ): Report {
   // Set defaults and shared data
   let reportObject: Report = {

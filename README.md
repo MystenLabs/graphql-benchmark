@@ -1,4 +1,5 @@
 # Quick Start
+
 `brew install pnpm`
 
 `pnpm install`
@@ -16,6 +17,7 @@ Recommend setting `\pset pager off` in your psql session to show results of `exp
 To run the Python scripts that interact with postgres, you will need to install libpq and the psycopg2 library.
 
 To replay a benchmark suite, add `--replay` as a flag. To run a benchmark experiment from manually picked variables, pass `--manual` as a flag.
+
 ```
 pnpm ts-node cli.ts --suite transaction-block --params-file-path experiments/queryTransactionBlocks-manual-2024-05-14T19:21:26.278Z.json --url https://sui-mainnet.mystenlabs.com/ --limit 10 --replay
 
@@ -65,6 +67,29 @@ pnpm ts-node cli.ts --suite transaction-block --params-file-path manual.json --u
 - `runnable_query.py` - converts the `debug_query` display printed by graphql for each query into something you can copy and paste into psql
 - `utils.py` convert base58 to hex - useful for converting `transaction_digest` to something that can be run against `transactions` table
 - `review.py` to merge multiple runs, select combinations that timed out, repro arbitrary runs
+
+# Scanning Benchmarks
+
+## Transaction Scanning
+
+The `transactions-scanning` suite benchmarks the `transactionsScan` GraphQL query with bloom filter optimization.
+
+This tests the two-stage bloom filter architecture:
+
+- **Stage 1**: Blocked bloom filters (1000 checkpoints per block)
+- **Stage 2**: Per-checkpoint bloom filters
+
+See [transactions-scanning/README.md](transactions-scanning/README.md) for full documentation on test coverage, filter combinations, and tuning parameters.
+
+## Event Scanning
+
+The `events-scanning` suite benchmarks the `events` GraphQL query, filtering by `sender`, `module`, and checkpoint bounds (`afterCheckpoint` / `beforeCheckpoint`).
+
+```bash
+pnpm ts-node cli.ts --suite events-scanning --url <url>
+```
+
+See [events-scanning/README.md](events-scanning/README.md) for query details and parameter configuration.
 
 # Performance Parity Checks (WIP)
 

@@ -5,9 +5,9 @@ import fs from "fs";
 import path from "path";
 
 import {
-  SuiGraphQLClient,
   GraphQLDocument,
   GraphQLQueryOptions,
+  SuiGraphQLClient,
 } from "@mysten/sui.js/graphql";
 import { ASTNode, print } from "graphql";
 import {
@@ -16,8 +16,8 @@ import {
   ReportStatus,
 } from "./benchmark";
 import { Arguments } from "./cli";
-import { EnsureArraysOnly, generateCombinations } from "./parameterization";
 import { getSuiteConfiguration } from "./config";
+import { EnsureArraysOnly, generateCombinations } from "./parameterization";
 
 export type Queries = Record<string, GraphQLDocument>;
 export type Query = Extract<keyof Queries, string>;
@@ -104,14 +104,16 @@ export async function runQuerySuite(args: Arguments) {
       const generatedCombinations = generateCombinations(
         parameters,
         typeStringFields,
+        args.minFilters,
+        args.requireCheckpointBounds,
       );
-      const combinationsTrue = generatedCombinations.map(
-        (vars) => [vars, true] as [any, boolean],
+      combinations = generatedCombinations.flatMap(
+        (vars) =>
+          [
+            [vars, true],
+            [vars, false],
+          ] as [any, boolean][],
       );
-      const combinationsFalse = generatedCombinations.map(
-        (vars) => [vars, false] as [any, boolean],
-      );
-      combinations = [...combinationsTrue, ...combinationsFalse];
       totalRuns = combinations.length;
     }
   } catch (e) {
@@ -126,13 +128,12 @@ export async function runQuerySuite(args: Arguments) {
   }
 
   const query = print(queries[queryKey] as ASTNode).replace(/\n/g, " ");
-  const fileName = args.outputFileName ? args.outputFileName : `${queryKey}-${inputJsonPathName}-${new Date().toISOString()}.json`;
+  const fileName = args.outputFileName
+    ? args.outputFileName
+    : `${queryKey}-${inputJsonPathName}-${new Date().toISOString()}.json`;
   const filePath = path.join(__dirname, "experiments", fileName);
 
-  console.log(
-    "Streaming to file: ",
-    filePath
-  );
+  console.log("Streaming to file: ", filePath);
 
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) {

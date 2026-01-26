@@ -19,7 +19,7 @@ export type SuiteConfig = {
  * Maps suites to default configurations, to be overriden by the user.
  */
 export async function getSuiteConfiguration(
-  suiteName: string,
+  suiteName: string
 ): Promise<SuiteConfig> {
   switch (suiteName) {
     case "transaction-block": {
@@ -101,6 +101,30 @@ export async function getSuiteConfiguration(
         dataPath: "address.balances.pageInfo",
         typeStringFields: [],
         paramsFilePath: "./balance/parameters.json",
+      };
+    }
+    case "transactions-scanning": {
+      let { queries } = await import("./scanning/queries/transactions");
+      return {
+        description:
+          "Transaction scan with bloom filters - comprehensive testing across epoch spans and filter combinations",
+        queries,
+        queryKey: "queryTransactions",
+        dataPath: "scanTransactions.pageInfo",
+        typeStringFields: ["function"],
+        paramsFilePath: "./scanning/parameters/transactions.json",
+      };
+    }
+    case "events-scanning": {
+      let { queries } = await import("./scanning/queries/events");
+      return {
+        description:
+          "Event scan with bloom filters - comprehensive testing across event types, senders, and modules",
+        queries,
+        queryKey: "scanEvents",
+        dataPath: "scanEvents.pageInfo",
+        typeStringFields: ["type", "module"],
+        paramsFilePath: "./scanning/parameters/events.json",
       };
     }
     default:

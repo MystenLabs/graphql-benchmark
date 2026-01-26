@@ -39,10 +39,17 @@ type NestedFilterParams<T> = {
 /**
  * Given an object convert fields that are nested objects into arrays of objects, and generate the
  * power set of the fields.
+ *
+ * @param obj - The object with array fields to generate combinations from
+ * @param typeStringFields - Fields that should have their type strings expanded
+ * @param minFilters - Minimum number of filter fields required in each combination
+ * @param requireCheckpointBounds - If true, require at least one checkpoint bound field
  */
 export function generateCombinations<T extends object>(
   obj: NestedFilterParams<T>,
   typeStringFields: string[] = [],
+  minFilters: number = 0,
+  requireCheckpointBounds: boolean = false,
 ) {
   const keys = Object.keys(obj) as (keyof T)[];
   let topLevelCombinations: ArrayFieldsOptional<T>[] = [{}];
@@ -77,7 +84,35 @@ export function generateCombinations<T extends object>(
     topLevelCombinations = newCombinations;
   }
 
-  return topLevelCombinations;
+  // Apply filters
+  let result = topLevelCombinations;
+
+  // Filter by minimum number of scannable filters (excludes checkpoint bounds and kind)
+  if (minFilters > 0) {
+    const excludedFields = ["afterCheckpoint", "beforeCheckpoint", "atCheckpoint", "kind"];
+    result = result.filter((combo) => {
+      const filterObj = (combo as any).filter;
+      if (!filterObj) return false;
+      const filterCount = Object.keys(filterObj).filter(
+        (k) => !excludedFields.includes(k)
+      ).length;
+      return filterCount >= minFilters;
+    });
+  }
+
+  // Filter by checkpoint bounds requirement - require BOTH afterCheckpoint AND beforeCheckpoint
+  if (requireCheckpointBounds) {
+    result = result.filter((combo) => {
+      const filterObj = (combo as any).filter;
+      if (!filterObj) return false;
+      return (
+        filterObj.afterCheckpoint !== undefined &&
+        filterObj.beforeCheckpoint !== undefined
+      );
+    });
+  }
+
+  return result;
 }
 
 /**
