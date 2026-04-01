@@ -39,11 +39,6 @@ type NestedFilterParams<T> = {
 /**
  * Given an object convert fields that are nested objects into arrays of objects, and generate the
  * power set of the fields.
- *
- * @param obj - The object with array fields to generate combinations from
- * @param typeStringFields - Fields that should have their type strings expanded
- * @param minFilters - Minimum number of filter fields required in each combination
- * @param requireCheckpointBounds - If true, require at least one checkpoint bound field
  */
 export function generateCombinations<T extends object>(
   obj: NestedFilterParams<T>,

@@ -19,7 +19,7 @@ export type SuiteConfig = {
  * Maps suites to default configurations, to be overriden by the user.
  */
 export async function getSuiteConfiguration(
-  suiteName: string
+  suiteName: string,
 ): Promise<SuiteConfig> {
   switch (suiteName) {
     case "transaction-block": {

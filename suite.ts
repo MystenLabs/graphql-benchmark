@@ -5,9 +5,9 @@ import fs from "fs";
 import path from "path";
 
 import {
+  SuiGraphQLClient,
   GraphQLDocument,
   GraphQLQueryOptions,
-  SuiGraphQLClient,
 } from "@mysten/sui.js/graphql";
 import { ASTNode, print } from "graphql";
 import {
@@ -16,8 +16,8 @@ import {
   ReportStatus,
 } from "./benchmark";
 import { Arguments } from "./cli";
-import { getSuiteConfiguration } from "./config";
 import { EnsureArraysOnly, generateCombinations } from "./parameterization";
+import { getSuiteConfiguration } from "./config";
 
 export type Queries = Record<string, GraphQLDocument>;
 export type Query = Extract<keyof Queries, string>;
