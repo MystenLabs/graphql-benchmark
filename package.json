@@ -10,7 +10,8 @@
     "eslint:fix": "pnpm run eslint:check --fix",
     "lint": "pnpm run eslint:check && pnpm run prettier:check",
     "lint:fix": "pnpm run eslint:fix && pnpm run prettier:fix",
-    "test": "jest"
+    "test": "jest",
+    "scan": "ts-node scanning/scan-cli.ts"
   },
   "keywords": [],
   "author": "",
@@ -34,8 +35,10 @@
   "dependencies": {
     "@mysten/graphql-transport": "^0.0.1",
     "@mysten/sui.js": "^0.51.1",
+    "@types/pg": "^8.11.2",
     "@types/yargs": "^17.0.32",
     "graphql": "^16.8.1",
+    "pg": "^8.11.3",
     "yargs": "^17.7.2"
   }
 }

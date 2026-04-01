@@ -16,6 +16,8 @@ export interface Arguments {
   replay: boolean;
   manual: boolean;
   outputFileName: string | undefined;
+  minFilters: number;
+  requireCheckpointBounds: boolean;
 }
 
 // Setup yargs
@@ -69,6 +71,16 @@ const argv = yargs(hideBin(process.argv))
   .option("outputFileName", {
     describe: "The name of the output file",
     type: "string",
+  })
+  .option("minFilters", {
+    describe: "Minimum number of non-checkpoint filters required",
+    type: "number",
+    default: 0,
+  })
+  .option("requireCheckpointBounds", {
+    describe: "Require both afterCheckpoint and beforeCheckpoint",
+    type: "boolean",
+    default: false,
   })
   .help("h")
   .alias("h", "help")

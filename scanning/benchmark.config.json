@@ -1,0 +1,27 @@
+{
+  "connection": {
+    "graphql_url": "http://127.0.0.1:7001/graphql",
+    "database_url": null
+  },
+  "benchmark": {
+    "limit": 50,
+    "num_pages": 3,
+    "min_filters": 2,
+    "require_checkpoint_bounds": true,
+    "output_dir": "experiments"
+  },
+  "discovery": {
+    "checkpoint_lo": null,
+    "checkpoint_hi": null,
+    "top_n": 10,
+    "low_freq_min": 100,
+    "low_freq_max": 1000
+  },
+  "bloom": {
+    "seed": 67,
+    "num_bits": 131072,
+    "num_hashes": 6,
+    "min_fold_bits": 8192,
+    "max_fold_density": 0.40
+  }
+}

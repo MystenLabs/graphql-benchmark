@@ -103,6 +103,30 @@ export async function getSuiteConfiguration(
         paramsFilePath: "./balance/parameters.json",
       };
     }
+    case "transactions-scanning": {
+      let { queries } = await import("./scanning/queries/transactions");
+      return {
+        description:
+          "Transaction scan with bloom filters - comprehensive testing across epoch spans and filter combinations",
+        queries,
+        queryKey: "queryTransactions",
+        dataPath: "scanTransactions.pageInfo",
+        typeStringFields: ["function"],
+        paramsFilePath: "./scanning/parameters/transactions.json",
+      };
+    }
+    case "events-scanning": {
+      let { queries } = await import("./scanning/queries/events");
+      return {
+        description:
+          "Event scan with bloom filters - comprehensive testing across event types, senders, and modules",
+        queries,
+        queryKey: "scanEvents",
+        dataPath: "scanEvents.pageInfo",
+        typeStringFields: ["type", "module"],
+        paramsFilePath: "./scanning/parameters/events.json",
+      };
+    }
     default:
       throw new Error(`Unknown suite: ${suiteName}`);
   }

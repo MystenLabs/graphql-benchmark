@@ -104,14 +104,16 @@ export async function runQuerySuite(args: Arguments) {
       const generatedCombinations = generateCombinations(
         parameters,
         typeStringFields,
+        args.minFilters,
+        args.requireCheckpointBounds,
       );
-      const combinationsTrue = generatedCombinations.map(
-        (vars) => [vars, true] as [any, boolean],
+      combinations = generatedCombinations.flatMap(
+        (vars) =>
+          [
+            [vars, true],
+            [vars, false],
+          ] as [any, boolean][],
       );
-      const combinationsFalse = generatedCombinations.map(
-        (vars) => [vars, false] as [any, boolean],
-      );
-      combinations = [...combinationsTrue, ...combinationsFalse];
       totalRuns = combinations.length;
     }
   } catch (e) {
@@ -126,13 +128,12 @@ export async function runQuerySuite(args: Arguments) {
   }
 
   const query = print(queries[queryKey] as ASTNode).replace(/\n/g, " ");
-  const fileName = args.outputFileName ? args.outputFileName : `${queryKey}-${inputJsonPathName}-${new Date().toISOString()}.json`;
+  const fileName = args.outputFileName
+    ? args.outputFileName
+    : `${queryKey}-${inputJsonPathName}-${new Date().toISOString()}.json`;
   const filePath = path.join(__dirname, "experiments", fileName);
 
-  console.log(
-    "Streaming to file: ",
-    filePath
-  );
+  console.log("Streaming to file: ", filePath);
 
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) {
